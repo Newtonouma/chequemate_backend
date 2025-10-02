@@ -607,6 +607,21 @@ async function initializeExistingMatches() {
   try {
     console.log('🔄 [STARTUP] Checking for existing matches that need result checking...');
     
+    // First, verify that the ongoing_matches table exists
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ongoing_matches'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.error('❌ [STARTUP] ongoing_matches table does not exist! Database may not be properly initialized.');
+      console.error('💡 [STARTUP] Please run database initialization: npm run db:initialize');
+      return;
+    }
+    
     const existingMatches = await pool.query(`
       SELECT 
         om.id as match_id,
@@ -662,5 +677,8 @@ async function initializeExistingMatches() {
     console.log('✅ [STARTUP] All existing match checkers restarted');
   } catch (error) {
     console.error('❌ [STARTUP] Error initializing existing matches:', error.message);
+    if (error.message.includes('relation "ongoing_matches" does not exist')) {
+      console.error('💡 [STARTUP] Database tables missing. Please run: npm run db:initialize');
+    }
   }
 }
