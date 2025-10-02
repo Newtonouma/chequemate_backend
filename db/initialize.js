@@ -19,14 +19,14 @@ const initializeDatabase = async () => {
     const client = await pool.connect();
     console.log('✅ Database connection established');
     
-    // Read the complete initialization SQL
-    const sqlPath = path.resolve(__dirname, 'complete-init.sql');
+    // Read the simple initialization SQL (avoids foreign key constraint issues)
+    const sqlPath = path.resolve(__dirname, 'simple-init.sql');
     const schemaSql = fs.readFileSync(sqlPath, 'utf8');
     
     console.log('📄 Executing database schema creation...');
     
     // Execute the schema creation
-    const result = await client.query(schemaSql);
+    await client.query(schemaSql);
     
     console.log('✅ Database schema initialized successfully');
     console.log('📊 All required tables are now available:');

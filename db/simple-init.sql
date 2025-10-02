@@ -1,5 +1,5 @@
--- Complete database initialization script
--- This script creates all required tables for the chess challenge application
+-- Simple database initialization script without foreign key constraints
+-- This avoids constraint issues during initial setup
 
 -- Create users table
 CREATE TABLE IF NOT EXISTS users (
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create challenges table (without foreign key constraints initially)
+-- Create challenges table (no foreign keys for simplicity)
 CREATE TABLE IF NOT EXISTS challenges (
     id SERIAL PRIMARY KEY,
     challenger INTEGER NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS challenges (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create games table (without foreign key constraints initially)
+-- Create games table (no foreign keys for simplicity)
 CREATE TABLE IF NOT EXISTS games (
     id SERIAL PRIMARY KEY,
     challenge_id INTEGER NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS games (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create postponed_challenges table (without foreign key constraints initially)
+-- Create postponed_challenges table (no foreign keys for simplicity)
 CREATE TABLE IF NOT EXISTS postponed_challenges (
     id SERIAL PRIMARY KEY,
     challenge_id INTEGER NOT NULL,
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS match_results (
     rating_change_loser INTEGER DEFAULT 0
 );
 
--- Create payment_deposits table (for payment tracking, without foreign key constraints initially)
+-- Create payment_deposits table (for payment tracking)
 CREATE TABLE IF NOT EXISTS payment_deposits (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS payment_deposits (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create payment_payouts table (for payout tracking, without foreign key constraints initially)
+-- Create payment_payouts table (for payout tracking)
 CREATE TABLE IF NOT EXISTS payment_payouts (
     id SERIAL PRIMARY KEY,
     winner_id INTEGER NOT NULL,
@@ -110,102 +110,7 @@ CREATE TABLE IF NOT EXISTS payment_payouts (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Add foreign key constraints after all tables are created
--- This prevents constraint errors during table creation
-
--- Add foreign keys for challenges table
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'challenges_challenger_fkey'
-    ) THEN
-        ALTER TABLE challenges ADD CONSTRAINT challenges_challenger_fkey 
-        FOREIGN KEY (challenger) REFERENCES users(id);
-    END IF;
-    
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'challenges_opponent_fkey'
-    ) THEN
-        ALTER TABLE challenges ADD CONSTRAINT challenges_opponent_fkey 
-        FOREIGN KEY (opponent) REFERENCES users(id);
-    END IF;
-END $$;
-
--- Add foreign keys for games table
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'games_challenge_id_fkey'
-    ) THEN
-        ALTER TABLE games ADD CONSTRAINT games_challenge_id_fkey 
-        FOREIGN KEY (challenge_id) REFERENCES challenges(id);
-    END IF;
-END $$;
-
--- Add foreign keys for postponed_challenges table
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'postponed_challenges_challenge_id_fkey'
-    ) THEN
-        ALTER TABLE postponed_challenges ADD CONSTRAINT postponed_challenges_challenge_id_fkey 
-        FOREIGN KEY (challenge_id) REFERENCES challenges(id);
-    END IF;
-    
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'postponed_challenges_postponed_by_fkey'
-    ) THEN
-        ALTER TABLE postponed_challenges ADD CONSTRAINT postponed_challenges_postponed_by_fkey 
-        FOREIGN KEY (postponed_by) REFERENCES users(id);
-    END IF;
-END $$;
-
--- Add foreign keys for payment_deposits table
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'payment_deposits_user_id_fkey'
-    ) THEN
-        ALTER TABLE payment_deposits ADD CONSTRAINT payment_deposits_user_id_fkey 
-        FOREIGN KEY (user_id) REFERENCES users(id);
-    END IF;
-    
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'payment_deposits_challenge_id_fkey'
-    ) THEN
-        ALTER TABLE payment_deposits ADD CONSTRAINT payment_deposits_challenge_id_fkey 
-        FOREIGN KEY (challenge_id) REFERENCES challenges(id);
-    END IF;
-END $$;
-
--- Add foreign keys for payment_payouts table
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'payment_payouts_winner_id_fkey'
-    ) THEN
-        ALTER TABLE payment_payouts ADD CONSTRAINT payment_payouts_winner_id_fkey 
-        FOREIGN KEY (winner_id) REFERENCES users(id);
-    END IF;
-    
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE constraint_name = 'payment_payouts_challenge_id_fkey'
-    ) THEN
-        ALTER TABLE payment_payouts ADD CONSTRAINT payment_payouts_challenge_id_fkey 
-        FOREIGN KEY (challenge_id) REFERENCES challenges(id);
-    END IF;
-END $$;
-
--- Add indexes for better performance
+-- Add basic indexes for performance
 CREATE INDEX IF NOT EXISTS idx_ongoing_matches_challenge_id ON ongoing_matches(challenge_id);
 CREATE INDEX IF NOT EXISTS idx_ongoing_matches_both_redirected ON ongoing_matches(both_redirected, result_checked);
 CREATE INDEX IF NOT EXISTS idx_match_results_challenge_id ON match_results(challenge_id);
@@ -213,8 +118,3 @@ CREATE INDEX IF NOT EXISTS idx_match_results_winner_id ON match_results(winner_i
 CREATE INDEX IF NOT EXISTS idx_challenges_status ON challenges(status);
 CREATE INDEX IF NOT EXISTS idx_challenges_challenger ON challenges(challenger);
 CREATE INDEX IF NOT EXISTS idx_challenges_opponent ON challenges(opponent);
-CREATE INDEX IF NOT EXISTS idx_payment_deposits_challenge_id ON payment_deposits(challenge_id);
-CREATE INDEX IF NOT EXISTS idx_payment_payouts_challenge_id ON payment_payouts(challenge_id);
-
--- Log successful initialization
-SELECT 'Database initialization completed successfully!' as status;
