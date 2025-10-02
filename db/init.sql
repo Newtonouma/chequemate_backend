@@ -1,0 +1,39 @@
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    phone VARCHAR(255),
+    name VARCHAR(255),
+    chess_com_username VARCHAR(255),
+    lichess_username VARCHAR(255),
+    preferred_platform VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS challenges (
+    id SERIAL PRIMARY KEY,
+    challenger INTEGER NOT NULL REFERENCES users(id),
+    opponent INTEGER NOT NULL REFERENCES users(id),
+    platform VARCHAR(255) NOT NULL,
+    time_control VARCHAR(255) DEFAULT '10+0',
+    rules VARCHAR(255) DEFAULT 'chess',
+    status VARCHAR(255) DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS games (
+    id SERIAL PRIMARY KEY,
+    challenge_id INTEGER NOT NULL REFERENCES challenges(id),
+    result VARCHAR(10) CHECK (result IN ('1-0', '0-1', '½-½')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS postponed_challenges (
+    id SERIAL PRIMARY KEY,
+    challenge_id INTEGER NOT NULL REFERENCES challenges(id),
+    postponed_by INTEGER NOT NULL REFERENCES users(id),
+    postponed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
