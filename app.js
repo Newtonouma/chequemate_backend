@@ -622,28 +622,90 @@ async function initializeExistingMatches() {
       return;
     }
     
-    const existingMatches = await pool.query(`
-      SELECT 
-        om.id as match_id,
-        om.match_started_at,
-        c.challenger,
-        c.opponent,
-        c.platform,
-        c.time_control,
-        cu.username as challenger_username,
-        ou.username as opponent_username
-      FROM ongoing_matches om
-      JOIN challenges c ON om.challenge_id = c.id
-      JOIN users cu ON c.challenger = cu.id
-      JOIN users ou ON c.opponent = ou.id
-      WHERE om.both_redirected = true 
-        AND om.result_checked = false
-        AND om.match_started_at IS NOT NULL
-    `);
+    // First, let's check what data types we're working with
+    console.log('🔍 [STARTUP] Checking database schema...');
     
-    if (existingMatches.rows.length === 0) {
-      console.log('✅ [STARTUP] No existing matches need result checking');
-      return;
+    try {
+      // Check if there are any ongoing matches first
+      const matchCount = await pool.query('SELECT COUNT(*) FROM ongoing_matches WHERE both_redirected = true AND result_checked = false');
+      console.log(`📊 [STARTUP] Found ${matchCount.rows[0].count} matches needing result checking`);
+      
+      if (parseInt(matchCount.rows[0].count) === 0) {
+        console.log('✅ [STARTUP] No existing matches need result checking');
+        return;
+      }
+      
+      // Get the matches with explicit casting to handle potential type mismatches
+      const existingMatches = await pool.query(`
+        SELECT 
+          om.id as match_id,
+          om.match_started_at,
+          om.challenger_id,
+          om.opponent_id,
+          om.platform,
+          om.challenger_username,
+          om.opponent_username,
+          COALESCE(c.time_control, '5+0') as time_control
+        FROM ongoing_matches om
+        LEFT JOIN challenges c ON om.challenge_id::text = c.id::text
+        WHERE om.both_redirected = true 
+          AND om.result_checked = false
+          AND om.match_started_at IS NOT NULL
+      `);
+      
+      if (existingMatches.rows.length === 0) {
+        console.log('✅ [STARTUP] No existing matches need result checking');
+        return;
+      }
+    } catch (queryError) {
+      console.error('❌ [STARTUP] Error querying ongoing matches:', queryError.message);
+      console.log('🔄 [STARTUP] Trying simpler query without joins...');
+      
+      try {
+        // Fallback: simple query without joins
+        const simpleMatches = await pool.query(`
+          SELECT 
+            id as match_id,
+            match_started_at,
+            challenger_username,
+            opponent_username,
+            platform
+          FROM ongoing_matches
+          WHERE both_redirected = true 
+            AND result_checked = false
+            AND match_started_at IS NOT NULL
+        `);
+        
+        if (simpleMatches.rows.length === 0) {
+          console.log('✅ [STARTUP] No existing matches need result checking (simple query)');
+          return;
+        }
+        
+        console.log(`🚀 [STARTUP] Found ${simpleMatches.rows.length} matches that need result checking (simple query)`);
+        
+        // Use the simple matches data
+        for (const match of simpleMatches.rows) {
+          const timeSinceStart = Date.now() - new Date(match.match_started_at).getTime();
+          const minutesSinceStart = Math.floor(timeSinceStart / (1000 * 60));
+          
+          console.log(`⚡ [STARTUP] Restarting checker for match ${match.match_id} (${match.challenger_username} vs ${match.opponent_username}, ${minutesSinceStart}min ago)`);
+          
+          setTimeout(() => {
+            PerMatchResultChecker.checkMatchResult(match.match_id, {
+              challenger: match.challenger_username,
+              opponent: match.opponent_username,
+              platform: match.platform
+            }, 0);
+          }, 1000);
+        }
+        
+        console.log('✅ [STARTUP] All existing match checkers restarted (simple query)');
+        return;
+        
+      } catch (fallbackError) {
+        console.error('❌ [STARTUP] Even simple query failed:', fallbackError.message);
+        return;
+      }
     }
     
     console.log(`🚀 [STARTUP] Found ${existingMatches.rows.length} matches that need result checking`);
