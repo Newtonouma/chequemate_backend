@@ -1,5 +1,5 @@
 import pool from "../config/database.js"; // PostgreSQL pool
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 class User {
   static async create(userData) {

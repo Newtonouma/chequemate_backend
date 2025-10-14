@@ -241,7 +241,34 @@ class PaymentController {
 
       // If this is a deposit callback and completed, check if both players have deposited
       if (payment.transaction_type === 'deposit' && mappedStatus === 'completed' && payment.challenge_id) {
-        await this.checkBothDepositsComplete(payment.challenge_id);
+        // Check if both deposits are complete (inline to avoid 'this' binding issues)
+        try {
+          const depositQuery = `
+            SELECT COUNT(*) as deposit_count
+            FROM payments 
+            WHERE challenge_id = $1 
+            AND transaction_type = 'deposit' 
+            AND status = 'completed';
+          `;
+
+          const depositResult = await pool.query(depositQuery, [payment.challenge_id]);
+          const depositCount = parseInt(depositResult.rows[0].deposit_count);
+
+          if (depositCount >= 2) {
+            // Both players have deposited, update challenge status
+            const updateChallengeQuery = `
+              UPDATE challenges 
+              SET status = 'deposits_complete'
+              WHERE id = $1;
+            `;
+            
+            await pool.query(updateChallengeQuery, [payment.challenge_id]);
+            console.log(`✅ Both deposits complete for challenge ${payment.challenge_id}`);
+          }
+        } catch (depositError) {
+          console.error('⚠️ Error checking deposits:', depositError);
+          // Don't fail the callback response for this
+        }
       }
 
       // Always return 200 OK for idempotency

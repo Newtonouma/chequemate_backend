@@ -419,7 +419,7 @@ class PerMatchResultChecker {
 
       // Convert result format to get winner_id
       const paymentResult = this.convertResultForPayment(result, match);
-      
+
       // Process payment if it's a bet match
       if (match.bet_amount && match.bet_amount > 0) {
         console.log(
@@ -444,7 +444,12 @@ class PerMatchResultChecker {
             completed_at = NOW()
         WHERE id = $4
       `,
-        [JSON.stringify(result), paymentResult.winner_id, paymentResult.result, matchId]
+        [
+          JSON.stringify(result),
+          paymentResult.winner_id,
+          paymentResult.result,
+          matchId,
+        ]
       );
 
       console.log(
