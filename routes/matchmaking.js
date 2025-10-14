@@ -38,7 +38,8 @@ async function fetchChessRating(platform, username) {
       method: "GET",
       timeout: 8000, // Increased timeout to 8 seconds
       headers: {
-        "User-Agent": "ChessNexus/1.0 (https://chess-nexus.com)",
+        "User-Agent":
+          "jkuat-university-chess-club-tool/0.1 (username: rookwitdahooks; contact: rolljoe42@gmail.com)",
         Accept: "application/json",
       },
     };

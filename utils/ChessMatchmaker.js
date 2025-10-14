@@ -47,7 +47,9 @@ class ChessMatchmaker {
         `https://api.chess.com/pub/player/${username.toLowerCase()}/games/archives`,
         {
           headers: {
-            "User-Agent": "ChessNexus/1.0 (contact@chessnexus.com)",
+            "User-Agent":
+              "jkuat-university-chess-club-tool/0.1 (username: rookwitdahooks; contact: rolljoe42@gmail.com)",
+            Accept: "application/json",
           },
         }
       );
@@ -63,7 +65,9 @@ class ChessMatchmaker {
       for (const url of recentUrls) {
         const monthResponse = await fetch(url, {
           headers: {
-            "User-Agent": "ChessNexus/1.0 (contact@chessnexus.com)",
+            "User-Agent":
+              "jkuat-university-chess-club-tool/0.1 (username: rookwitdahooks; contact: rolljoe42@gmail.com)",
+            Accept: "application/json",
           },
         });
 
