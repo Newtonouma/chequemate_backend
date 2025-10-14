@@ -11,6 +11,38 @@ const CHANNEL = process.env.CHANNEL || 'MPESA';
 const PRODUCT = process.env.PRODUCT || 'CA05';
 const HOST = process.env.ONIT_HOST || 'api.onitmfbank.com';
 
+// Helper function to normalize phone numbers to +254 format
+function normalizePhoneNumber(phone) {
+  if (!phone) return null;
+  
+  // Remove all spaces, dashes, and parentheses
+  let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+  
+  // If it starts with +254, it's already correct
+  if (cleaned.startsWith('+254')) {
+    return cleaned;
+  }
+  
+  // If it starts with 254, add the +
+  if (cleaned.startsWith('254')) {
+    return '+' + cleaned;
+  }
+  
+  // If it starts with 0, replace with +254
+  if (cleaned.startsWith('0')) {
+    return '+254' + cleaned.substring(1);
+  }
+  
+  // If it's just 9 digits (no prefix), add +254
+  if (cleaned.length === 9 && /^\d+$/.test(cleaned)) {
+    return '+254' + cleaned;
+  }
+  
+  // Return as-is if we can't figure it out
+  console.warn(`⚠️ Could not normalize phone number: ${phone}`);
+  return cleaned;
+}
+
 class PaymentService {
   constructor() {
     this.initialized = false;
@@ -29,8 +61,12 @@ class PaymentService {
 
   async initiateDeposit(phoneNumber, amount, userId, challengeId) {
     try {
+      // Normalize phone number to +254 format
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
       console.log('🏦 [DEPOSIT] Starting deposit initiation:', {
-        phoneNumber,
+        phoneNumber: normalizedPhone,
+        originalPhone: phoneNumber,
         amount,
         challengeId,
         userId,
@@ -78,7 +114,7 @@ class PaymentService {
       const paymentData = {
         user_id: numericUserId,
         challenge_id: numericChallengeId,
-        phone_number: phoneNumber,
+        phone_number: normalizedPhone,
         amount: numericAmount, // Store as numeric value
         transaction_type: 'deposit',
         status: 'pending',
@@ -118,7 +154,7 @@ class PaymentService {
       const apiResponse = await axios.post(url, {
         originatorRequestId: requestId,
         destinationAccount: DEFAULT_DESTINATION_ACCOUNT,
-        sourceAccount: phoneNumber,
+        sourceAccount: normalizedPhone,
         amount: Math.round(numericAmount), // Convert to integer as specified
         channel: CHANNEL,
         product: PRODUCT,
@@ -160,7 +196,10 @@ class PaymentService {
 
   async initiateWithdrawal(phoneNumber, amount, userId, challengeId, isRefund = false) {
     try {
-      console.log(`💰 [WITHDRAW] Initiating ${isRefund ? 'refund' : 'payout'} of KSH ${amount} to ${phoneNumber}`);
+      // Normalize phone number to +254 format
+      const normalizedPhone = normalizePhoneNumber(phoneNumber);
+      
+      console.log(`💰 [WITHDRAW] Initiating ${isRefund ? 'refund' : 'payout'} of KSH ${amount} to ${normalizedPhone} (original: ${phoneNumber})`);
       
       // Validate user_id and challengeId are valid numbers
       const numericUserId = parseInt(userId);
@@ -177,6 +216,10 @@ class PaymentService {
         throw new Error(`Invalid amount: ${amount}`);
       }
       
+      if (!normalizedPhone) {
+        throw new Error(`Invalid phone number: ${phoneNumber}`);
+      }
+      
       // Check minimum payout amount for M-Pesa (KES 10)
       const MINIMUM_PAYOUT = 10;
       if (numericAmount < MINIMUM_PAYOUT) {
@@ -190,7 +233,7 @@ class PaymentService {
         const paymentData = {
           user_id: numericUserId,
           challenge_id: numericChallengeId,
-          phone_number: phoneNumber,
+          phone_number: normalizedPhone,
           amount: numericAmount,
           transaction_type: 'balance_credit',
           status: 'completed',
@@ -224,7 +267,7 @@ class PaymentService {
       const paymentData = {
         user_id: numericUserId,
         challenge_id: numericChallengeId,
-        phone_number: phoneNumber,
+        phone_number: normalizedPhone,
         amount: numericAmount,
         transaction_type: isRefund ? 'refund' : 'payout',
         status: 'pending',
@@ -260,7 +303,7 @@ class PaymentService {
       const apiResponse = await axios.post(url, {
         originatorRequestId: requestId,
         sourceAccount: DEFAULT_DESTINATION_ACCOUNT,
-        destinationAccount: phoneNumber,
+        destinationAccount: normalizedPhone,
         amount: Math.round(Number(amount)), // Convert to integer as specified
         channel: CHANNEL,
         channelType: 'MOBILE',
