@@ -160,7 +160,7 @@ class PaymentService {
         product: PRODUCT,
         event: '',
         narration: `Get a cheque, mate ${numericChallengeId}`,
-        callbackUrl: process.env.ONIT_CALLBACK_URL || "https://chequemate.space/onit/deposit/callback"
+        callbackUrl: process.env.ONIT_CALLBACK_URL || "https://chequemate-backend-n13g.onrender.com/api/payments/callback"
       }, {
         headers: {
           'Content-Type': 'application/json',
@@ -309,7 +309,7 @@ class PaymentService {
         channelType: 'MOBILE',
         product: 'CA04',
         narration: `Chess Nexus ${isRefund ? 'refund' : 'winnings'} - Game ${challengeId}`,
-        callbackUrl: process.env.ONIT_CALLBACK_URL || "https://chequemate.space/onit/deposit/callback"
+        callbackUrl: process.env.ONIT_CALLBACK_URL || "https://chequemate-backend-n13g.onrender.com/api/payments/callback"
       }, {
         headers: {
           'Content-Type': 'application/json',
