@@ -16,10 +16,4 @@ router.post('/callback', paymentController.handleCallback);
 // Get payment status (requires authentication)
 router.get('/status', protect, paymentController.getPaymentStatus);
 
-// Get user balance (requires authentication)
-router.get('/balance', protect, paymentController.getUserBalance);
-
-// Get user transaction history (requires authentication)
-router.get('/history', protect, paymentController.getTransactionHistory);
-
 export default router;

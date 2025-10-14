@@ -1,4 +1,4 @@
-import pool from '../config/database.js';
+import pool from "../config/database.js";
 
 class Challenge {
   static async create(challengeData) {
@@ -6,12 +6,12 @@ class Challenge {
       challenger,
       opponent,
       platform,
-      time_control = '10+0',
-      rules = 'chess',
+      time_control = "10+0",
+      rules = "chess",
       bet_amount = 0,
-      payment_status = 'none',
+      payment_status = "none",
       challenger_phone = null,
-      opponent_phone = null
+      opponent_phone = null,
     } = challengeData;
 
     const query = `
@@ -41,7 +41,7 @@ class Challenge {
       bet_amount,
       payment_status,
       challenger_phone,
-      opponent_phone
+      opponent_phone,
     ];
 
     try {
@@ -67,10 +67,18 @@ class Challenge {
         c.rules,
         c.status,
         c.created_at,
-        challenger_user.username as challenger_username,
+        CASE 
+          WHEN c.platform = 'chess.com' THEN challenger_user.chess_com_username 
+          WHEN c.platform = 'lichess' THEN challenger_user.lichess_username 
+          ELSE challenger_user.username 
+        END as challenger_username,
         challenger_user.name as challenger_name,
         challenger_user.preferred_platform as challenger_preferred_platform,
-        opponent_user.username as opponent_username,
+        CASE 
+          WHEN c.platform = 'chess.com' THEN opponent_user.chess_com_username 
+          WHEN c.platform = 'lichess' THEN opponent_user.lichess_username 
+          ELSE opponent_user.username 
+        END as opponent_username,
         opponent_user.name as opponent_name,
         opponent_user.preferred_platform as opponent_preferred_platform
       FROM challenges c
@@ -81,7 +89,7 @@ class Challenge {
     `;
     try {
       const result = await pool.query(query, [userId]);
-      return result.rows.map(row => {
+      return result.rows.map((row) => {
         // Format to match frontend expectations
         return {
           id: row.id,
@@ -89,19 +97,19 @@ class Challenge {
             id: row.challenger,
             username: row.challenger_username,
             name: row.challenger_name,
-            preferred_platform: row.challenger_preferred_platform
+            preferred_platform: row.challenger_preferred_platform,
           },
           opponent: {
             id: row.opponent,
             username: row.opponent_username,
             name: row.opponent_name,
-            preferred_platform: row.opponent_preferred_platform
+            preferred_platform: row.opponent_preferred_platform,
           },
           platform: row.platform,
           time_control: row.time_control,
           rules: row.rules,
           status: row.status,
-          created_at: row.created_at
+          created_at: row.created_at,
         };
       });
     } catch (error) {
@@ -116,7 +124,7 @@ class Challenge {
       WHERE id = $2
       RETURNING *;
     `;
-    
+
     try {
       const result = await pool.query(query, [status, challengeId]);
       return result.rows[0];

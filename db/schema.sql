@@ -1,14 +1,34 @@
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    username VARCHAR(255) UNIQUE NOT NULL,
-    phone VARCHAR(20) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    chess_com_username VARCHAR(255),
-    lichess_username VARCHAR(255),
-    preferred_platform VARCHAR(50) NOT NULL,
-    slogan VARCHAR(500) DEFAULT 'Ready to Play!',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+create table if not exists users (
+   id                 serial primary key,
+   email              varchar(255) unique not null,
+   password           varchar(255) not null,
+   username           varchar(255) unique not null,
+   phone              varchar(20) not null,
+   name               varchar(255) not null,
+   chess_com_username varchar(255),
+   lichess_username   varchar(255),
+   preferred_platform varchar(50) not null,
+   slogan             varchar(500) default 'Ready to Play!',
+   balance            decimal(10,2) default 0.00,
+   current_rating     integer default 1200,
+   last_rating_update timestamp with time zone,
+   created_at         timestamp with time zone default current_timestamp,
+   updated_at         timestamp with time zone default current_timestamp
 ); 
+
+-- Wallet transactions table
+create table if not exists transactions (
+   id           serial primary key,
+   user_id      integer not null
+      references users ( id )
+         on delete cascade,
+   type         varchar(10) not null check ( type in ( 'credit',
+                                               'debit' ) ),
+   amount       decimal(10,2) not null,
+   description  varchar(255) not null,
+   reference_id varchar(255),
+   status       varchar(20) default 'completed' check ( status in ( 'pending',
+                                                              'completed',
+                                                              'failed' ) ),
+   created_at   timestamp with time zone default current_timestamp
+);

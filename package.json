@@ -5,12 +5,11 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node -r dotenv/config ./db/initialize.js",
     "start": "node app.js",
     "dev": "nodemon app.js",
     "db:init": "node -r dotenv/config ./db/init.js",
-    "db:initialize": "node -r dotenv/config ./db/initialize.js",
-    "deploy": "npm run db:initialize && npm start"
+    "build": "node test-build.js",
+    "test:build": "node test-build.js"
   },
   "keywords": [],
   "author": "",

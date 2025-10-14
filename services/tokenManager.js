@@ -14,7 +14,7 @@ class TokenManager {
     // Load credentials from env
     this.host = process.env.ONIT_HOST || 'api.onitmfbank.com';
     this.userId = process.env.ONIT_USER_ID || '1003';
-    this.password = process.env.ONIT_PASSWORD;
+    this.password = process.env.ONIT_PASSWORD || 'ONIT-En7Ao3';
   }
 
   async initialize() {
