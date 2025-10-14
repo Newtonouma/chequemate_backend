@@ -1,7 +1,16 @@
 import paymentService from '../services/paymentService.js';
 import pool from '../config/database.js';
 
+// Note: io will be set by setSocketIO() method before server starts
+let io = null;
+
 class PaymentController {
+  // Set the Socket.IO instance (called from app.js after io is initialized)
+  static setSocketIO(socketIO) {
+    io = socketIO;
+    console.log('✅ [PAYMENT_CONTROLLER] Socket.IO instance set');
+  }
+
   // Initiate deposit for a player
   async initiateDeposit(req, res) {
     try {
@@ -312,9 +321,37 @@ class PaymentController {
         
         await pool.query(updateChallengeQuery, [challengeId]);
         
-        console.log(`Both deposits complete for challenge ${challengeId}`);
+        console.log(`✅ Both deposits complete for challenge ${challengeId}`);
         
-        // TODO: Emit socket event to start the game
+        // Emit socket event to both players to start the game
+        if (io) {
+          // Get challenge details to notify both players
+          const challengeQuery = `
+            SELECT id, challenger, opponent, challenger_username, opponent_username, platform
+            FROM challenges 
+            WHERE id = $1;
+          `;
+          const challengeResult = await pool.query(challengeQuery, [challengeId]);
+          
+          if (challengeResult.rows.length > 0) {
+            const challenge = challengeResult.rows[0];
+            
+            const notificationData = {
+              challengeId: challenge.id,
+              platform: challenge.platform,
+              message: 'Both players have deposited! Ready to start match.',
+              timestamp: new Date().toISOString()
+            };
+            
+            // Emit to both challenger and opponent
+            io.to(challenge.challenger.toString()).emit('depositsComplete', notificationData);
+            io.to(challenge.opponent.toString()).emit('depositsComplete', notificationData);
+            
+            console.log(`📡 [SOCKET] Emitted depositsComplete to both players for challenge ${challengeId}`);
+          }
+        } else {
+          console.warn('⚠️ [SOCKET] Socket.IO not available, cannot emit depositsComplete event');
+        }
         
         return true;
       }

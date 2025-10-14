@@ -17,6 +17,7 @@ import userRoutes from "./routes/userRoutes.js";
 import matchmakingRoutes from "./routes/matchmaking.js";
 import matchResultRoutes from "./routes/matchResultRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import paymentController from "./controllers/paymentController.js";
 import statsRoutes from "./routes/statsRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 
@@ -30,6 +31,9 @@ const io = new SocketIOServer(server, {
     methods: ["GET", "POST"],
   },
 });
+
+// Set Socket.IO instance in payment controller for event emissions
+paymentController.constructor.setSocketIO(io);
 
 app.set("socketio", io);
 
@@ -859,3 +863,6 @@ async function initializeExistingMatches() {
     );
   }
 }
+
+// Export io for use in other modules
+export { io };
