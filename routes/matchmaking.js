@@ -172,9 +172,17 @@ router.get("/suggested", protect, async (req, res) => {
         platformUsername
       );
 
+      // Generate avatar from name or username
+      const displayName = user.name || user.username || "Player";
+      const avatar = displayName
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase();
+
       suggestions.push({
         id: user.id,
-        name: user.name,
+        name: displayName,
         username: user.username,
         rating: rating,
         rank:
@@ -186,10 +194,7 @@ router.get("/suggested", protect, async (req, res) => {
             ? "Advanced"
             : "Expert",
         country: "🌍",
-        avatar: user.name
-          .split(" ")
-          .map((n) => n[0])
-          .join(""),
+        avatar: avatar,
         platform: user.preferred_platform,
         platformUsername,
         slogan: user.slogan || "Ready to Play!",
