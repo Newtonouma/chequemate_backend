@@ -417,14 +417,15 @@ class PerMatchResultChecker {
 
       const match = matchQuery.rows[0];
 
+      // Convert result format to get winner_id
+      const paymentResult = this.convertResultForPayment(result, match);
+      
       // Process payment if it's a bet match
       if (match.bet_amount && match.bet_amount > 0) {
         console.log(
           `💳 [PER_MATCH_CHECKER] Processing payment for bet match ${matchId} (amount: ${match.bet_amount})`
         );
 
-        // Convert result format for paymentService
-        const paymentResult = this.convertResultForPayment(result, match);
         await paymentService.processMatchResult(paymentResult, match);
       } else {
         console.log(
@@ -432,14 +433,18 @@ class PerMatchResultChecker {
         );
       }
 
-      // Mark match as completed
+      // Mark match as completed with winner_id and result
       await pool.query(
         `
         UPDATE ongoing_matches 
-        SET result_checked = true, match_result = $1, completed_at = NOW()
-        WHERE id = $2
+        SET result_checked = true, 
+            match_result = $1, 
+            winner_id = $2, 
+            result = $3,
+            completed_at = NOW()
+        WHERE id = $4
       `,
-        [JSON.stringify(result), matchId]
+        [JSON.stringify(result), paymentResult.winner_id, paymentResult.result, matchId]
       );
 
       console.log(
