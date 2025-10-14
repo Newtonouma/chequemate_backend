@@ -178,16 +178,35 @@ class PaymentController {
   // Handle webhook callbacks from payment provider
   async handleCallback(req, res) {
     try {
-      console.log('Payment callback received:', req.body);
+      console.log('💳 [CALLBACK] Payment callback received:', req.body);
 
-      const { requestId, status, transactionId, amount, phoneNumber } = req.body;
+      // ONIT uses 'originatorRequestId' in callbacks
+      const originatorRequestId = req.body.originatorRequestId || req.body.requestId;
+      const onitStatus = req.body.status;
+      const transactionId = req.body.transactionId;
+      const timestamp = req.body.timestamp;
 
-      if (!requestId) {
-        return res.status(400).json({
+      if (!originatorRequestId) {
+        console.error('❌ [CALLBACK] Missing originatorRequestId/requestId in callback');
+        // Return 200 OK to prevent ONIT from retrying forever (idempotent)
+        return res.status(200).json({
           success: false,
-          message: 'Missing requestId in callback'
+          message: 'Missing originatorRequestId in callback'
         });
       }
+
+      // Map ONIT status to our internal status
+      let mappedStatus = 'pending';
+      const statusLower = (onitStatus || '').toLowerCase();
+      if (statusLower.includes('success') || statusLower.includes('complete')) {
+        mappedStatus = 'completed';
+      } else if (statusLower.includes('fail') || statusLower.includes('error')) {
+        mappedStatus = 'failed';
+      } else if (statusLower.includes('pend') || statusLower.includes('processing')) {
+        mappedStatus = 'processing';
+      }
+
+      console.log(`📊 [CALLBACK] Status mapping: "${onitStatus}" → "${mappedStatus}"`);
 
       // Update payment status in database
       const updateQuery = `
@@ -202,34 +221,38 @@ class PaymentController {
       `;
 
       const result = await pool.query(updateQuery, [
-        status || 'completed',
+        mappedStatus,
         transactionId,
         JSON.stringify(req.body),
-        requestId
+        originatorRequestId
       ]);
 
       if (result.rows.length === 0) {
-        console.error('Payment record not found for requestId:', requestId);
-        return res.status(404).json({
-          success: false,
-          message: 'Payment record not found'
+        console.warn(`⚠️ [CALLBACK] Payment record not found for requestId: ${originatorRequestId}`);
+        // Return 200 OK (idempotent) - prevents ONIT from retrying forever
+        return res.status(200).json({
+          success: true,
+          message: 'Callback received but transaction not found (likely already processed)'
         });
       }
 
       const payment = result.rows[0];
+      console.log(`✅ [CALLBACK] Updated payment ${payment.id}: ${payment.transaction_type} → ${mappedStatus}`);
 
-      // If this is a deposit callback, check if both players have deposited
-      if (payment.transaction_type === 'deposit' && payment.challenge_id) {
+      // If this is a deposit callback and completed, check if both players have deposited
+      if (payment.transaction_type === 'deposit' && mappedStatus === 'completed' && payment.challenge_id) {
         await this.checkBothDepositsComplete(payment.challenge_id);
       }
 
-      res.json({
+      // Always return 200 OK for idempotency
+      res.status(200).json({
         success: true,
         message: 'Callback processed successfully'
       });
 
     } catch (error) {
-      console.error('Error processing payment callback:', error);
+      console.error('❌ [CALLBACK] Error processing payment callback:', error);
+      // Return 500 to let ONIT retry (if they support retries)
       res.status(500).json({
         success: false,
         message: 'Failed to process callback',
