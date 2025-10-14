@@ -93,19 +93,56 @@ class User {
 
   static async updateRatingCache(username, ratingData) {
     const { currentRating } = ratingData;
-    const query = `
-            UPDATE users 
-            SET 
-                current_rating = $2,
-                last_rating_update = NOW()
-            WHERE username = $1
-            RETURNING *;
-        `;
 
+    // First check if the columns exist to handle production gracefully
     try {
-      const result = await pool.query(query, [username, currentRating]);
+      const columnCheck = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' 
+        AND column_name IN ('current_rating', 'last_rating_update')
+      `);
+
+      const existingColumns = columnCheck.rows.map((row) => row.column_name);
+      const hasCurrentRating = existingColumns.includes("current_rating");
+      const hasLastUpdate = existingColumns.includes("last_rating_update");
+
+      if (!hasCurrentRating && !hasLastUpdate) {
+        console.log(
+          `⚠️  Rating columns missing for ${username}, skipping rating update`
+        );
+        // Return user data without rating update
+        const fallbackQuery = "SELECT * FROM users WHERE username = $1";
+        const fallbackResult = await pool.query(fallbackQuery, [username]);
+        return fallbackResult.rows[0];
+      }
+
+      // Build dynamic query based on available columns
+      let setClause = [];
+      let params = [username];
+      let paramIndex = 2;
+
+      if (hasCurrentRating) {
+        setClause.push(`current_rating = $${paramIndex}`);
+        params.push(currentRating);
+        paramIndex++;
+      }
+
+      if (hasLastUpdate) {
+        setClause.push(`last_rating_update = NOW()`);
+      }
+
+      const query = `
+        UPDATE users 
+        SET ${setClause.join(", ")}
+        WHERE username = $1
+        RETURNING *;
+      `;
+
+      const result = await pool.query(query, params);
       return result.rows[0];
     } catch (error) {
+      console.error(`❌ Error updating rating cache for ${username}:`, error);
       throw error;
     }
   }
