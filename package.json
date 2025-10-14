@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "db:init": "node -r dotenv/config ./db/init.js"
+    "db:init": "node -r dotenv/config ./db/init.js",
+    "build": "echo \"Build completed - no build step required for this backend\""
   },
   "keywords": [],
   "author": "",
