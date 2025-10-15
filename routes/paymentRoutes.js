@@ -22,7 +22,7 @@ router.post(
 );
 
 // Payment callback (webhook from payment provider - no auth required)
-router.post("/callback", paymentController.handleCallback);
+router.post("/callback", (req, res) => paymentController.handleCallback(req, res));
 
 // Get payment status (requires authentication)
 router.get("/status", protect, paymentController.getPaymentStatus);
