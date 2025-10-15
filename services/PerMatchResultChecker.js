@@ -2,17 +2,25 @@ import axios from "axios";
 import pool from "../config/database.js";
 import paymentService from "./paymentService.js";
 import chessComApiQueue from "./ChessComApiQueue.js";
+import userStatsCache from "./UserStatsCache.js";
 
 class PerMatchResultChecker {
   constructor() {
     this.activeCheckers = new Map(); // matchId -> { timeoutId, checkCount }
-    this.maxChecksPerMatch = 15; // Stop after ~30 minutes of checking (15 * 2 minutes)
+    this.maxChecksPerMatch = 4; // Stop after ~8 minutes of checking (4 * 2 minutes)
     this.checkInterval = 2 * 60 * 1000; // 2 minutes in milliseconds
     this.rateLimitedUntil = null; // Timestamp when rate limiting expires
     this.rateLimitDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
+    this.io = null; // Socket.IO instance for notifications
     console.log(
       "🎯 [PER_MATCH_CHECKER] Initialized - Per-match dynamic checking system ready"
     );
+  }
+
+  // Set Socket.IO instance for notifications
+  setSocketIO(io) {
+    this.io = io;
+    console.log("🔌 [PER_MATCH_CHECKER] Socket.IO instance set");
   }
 
   // Start checking a specific match after calculated delay
@@ -93,8 +101,12 @@ class PerMatchResultChecker {
   async checkMatchResult(matchId, players, checkCount) {
     if (checkCount >= this.maxChecksPerMatch) {
       console.log(
-        `⏰ [PER_MATCH_CHECKER] Max checks reached for match ${matchId}, stopping`
+        `⏰ [PER_MATCH_CHECKER] Max checks (${this.maxChecksPerMatch}) reached for match ${matchId}, initiating auto-refund`
       );
+
+      // Auto-refund both players after max attempts
+      await this.handleNoResultFound(matchId, players);
+
       this.stopCheckingMatch(matchId);
       return;
     }
@@ -452,6 +464,16 @@ class PerMatchResultChecker {
         ]
       );
 
+      // Invalidate cache for both players (match completed, need fresh stats)
+      userStatsCache.invalidateOngoingMatchCache(
+        players.challenger,
+        players.platform
+      );
+      userStatsCache.invalidateOngoingMatchCache(
+        players.opponent,
+        players.platform
+      );
+
       console.log(
         `✅ [PER_MATCH_CHECKER] Match ${matchId} processed and marked complete`
       );
@@ -537,6 +559,198 @@ class PerMatchResultChecker {
     }
     this.activeCheckers.clear();
     console.log("✅ [PER_MATCH_CHECKER] All match checkers cleaned up");
+  }
+
+  // Handle case when no result is found after max attempts - Auto refund both players
+  async handleNoResultFound(matchId, players) {
+    try {
+      console.log(
+        `💰 [PER_MATCH_CHECKER] No result found for match ${matchId} after ${this.maxChecksPerMatch} attempts`
+      );
+      console.log(
+        `💰 [PER_MATCH_CHECKER] Processing auto-refund for: ${players.challenger} vs ${players.opponent}`
+      );
+
+      // Get match details including challenge_id
+      const matchQuery = `
+        SELECT om.*, c.bet_amount, c.challenger, c.opponent, 
+               c.challenger_phone, c.opponent_phone
+        FROM ongoing_matches om
+        JOIN challenges c ON om.challenge_id = c.id
+        WHERE om.id = $1
+      `;
+
+      const matchResult = await pool.query(matchQuery, [matchId]);
+
+      if (matchResult.rows.length === 0) {
+        console.error(
+          `❌ [PER_MATCH_CHECKER] Match ${matchId} not found in database`
+        );
+        return;
+      }
+
+      const match = matchResult.rows[0];
+      const betAmount = parseFloat(match.bet_amount || 0);
+
+      if (betAmount === 0) {
+        console.log(
+          `ℹ️ [PER_MATCH_CHECKER] Match ${matchId} had no bet, no refund needed`
+        );
+        await pool.query(
+          `UPDATE ongoing_matches 
+           SET result_checked = TRUE, 
+               result = 'no_result_no_bet',
+               notes = 'No result found after ${this.maxChecksPerMatch} attempts. No bet amount to refund.',
+               completed_at = NOW()
+           WHERE id = $1`,
+          [matchId]
+        );
+        return;
+      }
+
+      console.log(
+        `💵 [PER_MATCH_CHECKER] Refunding ${betAmount} KSH to each player`
+      );
+
+      // Refund logic: >10 KSH = M-Pesa, <=10 KSH = wallet credit
+      if (betAmount > 10) {
+        // M-Pesa refund for both players
+        console.log(
+          `📱 [PER_MATCH_CHECKER] Amount > 10 KSH, initiating M-Pesa refunds`
+        );
+
+        await paymentService.initiateWithdrawal(
+          match.challenger_phone,
+          betAmount,
+          match.challenger,
+          match.challenge_id,
+          true // isRefund = true
+        );
+
+        await paymentService.initiateWithdrawal(
+          match.opponent_phone,
+          betAmount,
+          match.opponent,
+          match.challenge_id,
+          true // isRefund = true
+        );
+
+        console.log(
+          `✅ [PER_MATCH_CHECKER] M-Pesa refunds initiated for both players`
+        );
+      } else {
+        // Wallet credit for both players (<=10 KSH)
+        console.log(
+          `💰 [PER_MATCH_CHECKER] Amount ≤ 10 KSH, crediting to wallets`
+        );
+
+        // Credit challenger's wallet
+        await pool.query(
+          `UPDATE users 
+           SET balance = balance + $1, 
+               updated_at = NOW() 
+           WHERE id = $2`,
+          [betAmount, match.challenger]
+        );
+
+        // Credit opponent's wallet
+        await pool.query(
+          `UPDATE users 
+           SET balance = balance + $1, 
+               updated_at = NOW() 
+           WHERE id = $2`,
+          [betAmount, match.opponent]
+        );
+
+        // Record wallet credits in payments table
+        await pool.query(
+          `INSERT INTO payments 
+           (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes) 
+           VALUES 
+           ($1, $2, $3, $4, 'balance_credit', 'completed', $5, $6),
+           ($7, $2, $8, $4, 'balance_credit', 'completed', $9, $6)`,
+          [
+            match.challenger,
+            match.challenge_id,
+            match.challenger_phone,
+            betAmount,
+            `REFUND_WALLET_${match.challenge_id}_${
+              match.challenger
+            }_${Date.now()}`,
+            `No result found after ${this.maxChecksPerMatch} attempts. Amount credited to wallet.`,
+            match.opponent,
+            match.opponent_phone,
+            `REFUND_WALLET_${match.challenge_id}_${
+              match.opponent
+            }_${Date.now()}`,
+          ]
+        );
+
+        console.log(
+          `✅ [PER_MATCH_CHECKER] Wallet credits completed for both players`
+        );
+      }
+
+      // Mark match as completed with no result
+      await pool.query(
+        `UPDATE ongoing_matches 
+         SET result_checked = TRUE, 
+             result = 'no_result_refunded',
+             match_result = $2,
+             notes = 'No result found after ${this.maxChecksPerMatch} attempts. Both players refunded.',
+             completed_at = NOW()
+         WHERE id = $1`,
+        [
+          matchId,
+          JSON.stringify({
+            status: "no_result",
+            refund_type: betAmount > 10 ? "mpesa" : "wallet",
+            amount_refunded: betAmount,
+            reason: `Match result not found after ${this.maxChecksPerMatch} check attempts`,
+          }),
+        ]
+      );
+
+      console.log(
+        `✅ [PER_MATCH_CHECKER] Match ${matchId} marked as completed with auto-refund`
+      );
+
+      // Emit socket events to both players
+      if (this.io) {
+        const refundMessage =
+          betAmount > 10
+            ? `Your ${betAmount} KSH bet has been refunded to M-Pesa due to match timeout.`
+            : `Your ${betAmount} KSH bet has been credited to your wallet due to match timeout.`;
+
+        console.log(
+          `🔔 [PER_MATCH_CHECKER] Emitting matchRefunded to players ${match.challenger} and ${match.opponent}`
+        );
+
+        this.io.to(match.challenger.toString()).emit("matchRefunded", {
+          matchId,
+          challengeId: match.challenge_id,
+          amount: betAmount,
+          refundType: betAmount > 10 ? "mpesa" : "wallet",
+          message: refundMessage,
+          timestamp: new Date().toISOString(),
+        });
+
+        this.io.to(match.opponent.toString()).emit("matchRefunded", {
+          matchId,
+          challengeId: match.challenge_id,
+          amount: betAmount,
+          refundType: betAmount > 10 ? "mpesa" : "wallet",
+          message: refundMessage,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error(
+        `❌ [PER_MATCH_CHECKER] Error handling no result for match ${matchId}:`,
+        error.message
+      );
+      console.error(error.stack);
+    }
   }
 }
 

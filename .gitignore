@@ -15,6 +15,9 @@ node_modules/
 .env.production.local
 .env.production
 
+# Allow .env.example to be committed (template file)
+!.env.example
+
 # Database files
 *.db
 *.sqlite

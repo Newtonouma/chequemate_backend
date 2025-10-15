@@ -1,5 +1,5 @@
-import paymentService from '../services/paymentService.js';
-import pool from '../config/database.js';
+import paymentService from "../services/paymentService.js";
+import pool from "../config/database.js";
 
 // Note: io will be set by setSocketIO() method before server starts
 let io = null;
@@ -8,7 +8,7 @@ class PaymentController {
   // Set the Socket.IO instance (called from app.js after io is initialized)
   static setSocketIO(socketIO) {
     io = socketIO;
-    console.log('✅ [PAYMENT_CONTROLLER] Socket.IO instance set');
+    console.log("✅ [PAYMENT_CONTROLLER] Socket.IO instance set");
   }
 
   // Initiate deposit for a player
@@ -21,7 +21,7 @@ class PaymentController {
         amount,
         challengeId,
         userId,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
 
       if (!phoneNumber || !amount || !challengeId || !userId) {
@@ -29,11 +29,12 @@ class PaymentController {
           phoneNumber: !!phoneNumber,
           amount: !!amount,
           challengeId: !!challengeId,
-          userId: !!userId
+          userId: !!userId,
         });
         return res.status(400).json({
           success: false,
-          message: 'Missing required fields: phoneNumber, amount, challengeId, userId'
+          message:
+            "Missing required fields: phoneNumber, amount, challengeId, userId",
         });
       }
 
@@ -46,15 +47,19 @@ class PaymentController {
         sourceAccount: phoneNumber,
         amount: amount,
         requestId: requestId,
-        destinationAccount: '0001650000002'
+        destinationAccount: "0001650000002",
       });
 
-      const depositResult = await paymentService.initiateDeposit(phoneNumber, amount, requestId);
-      
+      const depositResult = await paymentService.initiateDeposit(
+        phoneNumber,
+        amount,
+        requestId
+      );
+
       console.log(`📋 [DEPOSIT] Payment service response:`, {
         status: depositResult.status,
         data: depositResult.data,
-        requestId: depositResult.requestId
+        requestId: depositResult.requestId,
       });
 
       // Store payment record in database
@@ -79,39 +84,38 @@ class PaymentController {
         userId,
         phoneNumber,
         amount,
-        'deposit',
+        "deposit",
         requestId,
-        'pending'
+        "pending",
       ]);
 
       console.log(`✅ [DEPOSIT] Payment record stored:`, {
         paymentId: paymentRecord.rows[0].id,
         phoneNumber: phoneNumber,
         amount: amount,
-        requestId: requestId
+        requestId: requestId,
       });
 
       const responseData = {
         success: true,
-        message: 'Deposit initiated successfully',
+        message: "Deposit initiated successfully",
         data: {
           paymentId: paymentRecord.rows[0].id,
           requestId: requestId,
           amount: amount,
           phoneNumber: phoneNumber,
-          depositResponse: depositResult
-        }
+          depositResponse: depositResult,
+        },
       };
 
       console.log(`📤 [DEPOSIT] Sending response:`, responseData);
       res.json(responseData);
-
     } catch (error) {
-      console.error('Error initiating deposit:', error);
+      console.error("Error initiating deposit:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to initiate deposit',
-        error: error.message
+        message: "Failed to initiate deposit",
+        error: error.message,
       });
     }
   }
@@ -124,7 +128,8 @@ class PaymentController {
       if (!phoneNumber || !amount || !gameId || !userId) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required fields: phoneNumber, amount, gameId, userId'
+          message:
+            "Missing required fields: phoneNumber, amount, gameId, userId",
         });
       }
 
@@ -132,7 +137,11 @@ class PaymentController {
       const requestId = `WTH_${gameId}_${userId}_${Date.now()}`;
 
       // Initiate withdrawal with payment service
-      const withdrawalResult = await paymentService.initiateWithdrawal(phoneNumber, amount, requestId);
+      const withdrawalResult = await paymentService.initiateWithdrawal(
+        phoneNumber,
+        amount,
+        requestId
+      );
 
       // Store payment record in database
       const insertQuery = `
@@ -156,66 +165,111 @@ class PaymentController {
         userId,
         phoneNumber,
         amount,
-        'withdrawal',
+        "withdrawal",
         requestId,
-        'pending',
-        reason || 'game_payout'
+        "pending",
+        reason || "game_payout",
       ]);
 
       res.json({
         success: true,
-        message: 'Withdrawal initiated successfully',
+        message: "Withdrawal initiated successfully",
         data: {
           paymentId: paymentRecord.rows[0].id,
           requestId: requestId,
           amount: amount,
           phoneNumber: phoneNumber,
-          withdrawalResponse: withdrawalResult
-        }
+          withdrawalResponse: withdrawalResult,
+        },
       });
-
     } catch (error) {
-      console.error('Error initiating withdrawal:', error);
+      console.error("Error initiating withdrawal:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to initiate withdrawal',
-        error: error.message
+        message: "Failed to initiate withdrawal",
+        error: error.message,
       });
     }
+  }
+
+  /**
+   * Extract request ID from ONIT callback payload
+   * Handles cases where originatorRequestId is missing but embedded in error messages
+   * Example: "1003|DEP_69_8_1760555690220 : Error..." → "DEP_69_8_1760555690220"
+   */
+  extractRequestId(payload) {
+    // First try standard fields
+    let requestId = payload.originatorRequestId || payload.requestId;
+
+    if (requestId) {
+      return requestId;
+    }
+
+    // Try to extract from message/description text using regex
+    const text =
+      payload.message || payload.description || payload.responseMessage || "";
+
+    // Pattern matches: "1003|DEP_69_8_1760555690220 :" or "WTH_123_456_789 :"
+    const patterns = [
+      /\|([A-Z]+_\d+_\d+_\d+)\s*[:]/i, // After pipe symbol
+      /([A-Z]+_\d+_\d+_\d+)/i, // Anywhere in text
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        console.log(
+          `🔍 [CALLBACK] Extracted request ID from message: "${match[1]}"`
+        );
+        return match[1];
+      }
+    }
+
+    return null;
   }
 
   // Handle webhook callbacks from payment provider
   async handleCallback(req, res) {
     try {
-      console.log('💳 [CALLBACK] Payment callback received:', req.body);
+      console.log("💳 [CALLBACK] Payment callback received:", req.body);
 
-      // ONIT uses 'originatorRequestId' in callbacks
-      const originatorRequestId = req.body.originatorRequestId || req.body.requestId;
+      // Extract request ID using helper function
+      const originatorRequestId = this.extractRequestId(req.body);
       const onitStatus = req.body.status;
       const transactionId = req.body.transactionId;
       const timestamp = req.body.timestamp;
 
       if (!originatorRequestId) {
-        console.error('❌ [CALLBACK] Missing originatorRequestId/requestId in callback');
+        console.error(
+          "❌ [CALLBACK] Missing originatorRequestId/requestId in callback"
+        );
         // Return 200 OK to prevent ONIT from retrying forever (idempotent)
         return res.status(200).json({
           success: false,
-          message: 'Missing originatorRequestId in callback'
+          message: "Missing originatorRequestId in callback",
         });
       }
 
       // Map ONIT status to our internal status
-      let mappedStatus = 'pending';
-      const statusLower = (onitStatus || '').toLowerCase();
-      if (statusLower.includes('success') || statusLower.includes('complete')) {
-        mappedStatus = 'completed';
-      } else if (statusLower.includes('fail') || statusLower.includes('error')) {
-        mappedStatus = 'failed';
-      } else if (statusLower.includes('pend') || statusLower.includes('processing')) {
-        mappedStatus = 'processing';
+      let mappedStatus = "pending";
+      const statusLower = (onitStatus || "").toLowerCase();
+      if (statusLower.includes("success") || statusLower.includes("complete")) {
+        mappedStatus = "completed";
+      } else if (
+        statusLower.includes("fail") ||
+        statusLower.includes("error")
+      ) {
+        mappedStatus = "failed";
+      } else if (
+        statusLower.includes("pend") ||
+        statusLower.includes("processing")
+      ) {
+        mappedStatus = "processing";
       }
 
-      console.log(`📊 [CALLBACK] Status mapping: "${onitStatus}" → "${mappedStatus}"`);
+      console.log(
+        `📊 [CALLBACK] Status mapping: "${onitStatus}" → "${mappedStatus}"`
+      );
 
       // Update payment status in database
       const updateQuery = `
@@ -233,23 +287,55 @@ class PaymentController {
         mappedStatus,
         transactionId,
         JSON.stringify(req.body),
-        originatorRequestId
+        originatorRequestId,
       ]);
 
       if (result.rows.length === 0) {
-        console.warn(`⚠️ [CALLBACK] Payment record not found for requestId: ${originatorRequestId}`);
+        console.warn(
+          `⚠️ [CALLBACK] Payment record not found for requestId: ${originatorRequestId}`
+        );
         // Return 200 OK (idempotent) - prevents ONIT from retrying forever
         return res.status(200).json({
           success: true,
-          message: 'Callback received but transaction not found (likely already processed)'
+          message:
+            "Callback received but transaction not found (likely already processed)",
         });
       }
 
       const payment = result.rows[0];
-      console.log(`✅ [CALLBACK] Updated payment ${payment.id}: ${payment.transaction_type} → ${mappedStatus}`);
+      console.log(
+        `✅ [CALLBACK] Updated payment ${payment.id}: ${payment.transaction_type} → ${mappedStatus}`
+      );
+
+      // If this is a deposit callback and failed, notify the user
+      if (
+        payment.transaction_type === "deposit" &&
+        mappedStatus === "failed" &&
+        payment.user_id
+      ) {
+        console.log(
+          `💔 [CALLBACK] Emitting paymentFailed to user ${payment.user_id}`
+        );
+        if (this.io) {
+          this.io.to(payment.user_id.toString()).emit("paymentFailed", {
+            userId: payment.user_id,
+            challengeId: payment.challenge_id,
+            amount: payment.amount,
+            message:
+              req.body.message ||
+              req.body.description ||
+              "Payment failed. Please try again.",
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
 
       // If this is a deposit callback and completed, check if both players have deposited
-      if (payment.transaction_type === 'deposit' && mappedStatus === 'completed' && payment.challenge_id) {
+      if (
+        payment.transaction_type === "deposit" &&
+        mappedStatus === "completed" &&
+        payment.challenge_id
+      ) {
         // Check if both deposits are complete (inline to avoid 'this' binding issues)
         try {
           const depositQuery = `
@@ -260,7 +346,9 @@ class PaymentController {
             AND status = 'completed';
           `;
 
-          const depositResult = await pool.query(depositQuery, [payment.challenge_id]);
+          const depositResult = await pool.query(depositQuery, [
+            payment.challenge_id,
+          ]);
           const depositCount = parseInt(depositResult.rows[0].deposit_count);
 
           if (depositCount >= 2) {
@@ -270,12 +358,14 @@ class PaymentController {
               SET status = 'deposits_complete'
               WHERE id = $1;
             `;
-            
+
             await pool.query(updateChallengeQuery, [payment.challenge_id]);
-            console.log(`✅ Both deposits complete for challenge ${payment.challenge_id}`);
+            console.log(
+              `✅ Both deposits complete for challenge ${payment.challenge_id}`
+            );
           }
         } catch (depositError) {
-          console.error('⚠️ Error checking deposits:', depositError);
+          console.error("⚠️ Error checking deposits:", depositError);
           // Don't fail the callback response for this
         }
       }
@@ -283,16 +373,15 @@ class PaymentController {
       // Always return 200 OK for idempotency
       res.status(200).json({
         success: true,
-        message: 'Callback processed successfully'
+        message: "Callback processed successfully",
       });
-
     } catch (error) {
-      console.error('❌ [CALLBACK] Error processing payment callback:', error);
+      console.error("❌ [CALLBACK] Error processing payment callback:", error);
       // Return 500 to let ONIT retry (if they support retries)
       res.status(500).json({
         success: false,
-        message: 'Failed to process callback',
-        error: error.message
+        message: "Failed to process callback",
+        error: error.message,
       });
     }
   }
@@ -318,11 +407,11 @@ class PaymentController {
           SET status = 'deposits_complete'
           WHERE id = $1;
         `;
-        
+
         await pool.query(updateChallengeQuery, [challengeId]);
-        
+
         console.log(`✅ Both deposits complete for challenge ${challengeId}`);
-        
+
         // Emit socket event to both players to start the game
         if (io) {
           // Get challenge details to notify both players
@@ -331,34 +420,46 @@ class PaymentController {
             FROM challenges 
             WHERE id = $1;
           `;
-          const challengeResult = await pool.query(challengeQuery, [challengeId]);
-          
+          const challengeResult = await pool.query(challengeQuery, [
+            challengeId,
+          ]);
+
           if (challengeResult.rows.length > 0) {
             const challenge = challengeResult.rows[0];
-            
+
             const notificationData = {
               challengeId: challenge.id,
               platform: challenge.platform,
-              message: 'Both players have deposited! Ready to start match.',
-              timestamp: new Date().toISOString()
+              message: "Both players have deposited! Ready to start match.",
+              timestamp: new Date().toISOString(),
             };
-            
+
             // Emit to both challenger and opponent
-            io.to(challenge.challenger.toString()).emit('depositsComplete', notificationData);
-            io.to(challenge.opponent.toString()).emit('depositsComplete', notificationData);
-            
-            console.log(`📡 [SOCKET] Emitted depositsComplete to both players for challenge ${challengeId}`);
+            io.to(challenge.challenger.toString()).emit(
+              "depositsComplete",
+              notificationData
+            );
+            io.to(challenge.opponent.toString()).emit(
+              "depositsComplete",
+              notificationData
+            );
+
+            console.log(
+              `📡 [SOCKET] Emitted depositsComplete to both players for challenge ${challengeId}`
+            );
           }
         } else {
-          console.warn('⚠️ [SOCKET] Socket.IO not available, cannot emit depositsComplete event');
+          console.warn(
+            "⚠️ [SOCKET] Socket.IO not available, cannot emit depositsComplete event"
+          );
         }
-        
+
         return true;
       }
 
       return false;
     } catch (error) {
-      console.error('Error checking deposits:', error);
+      console.error("Error checking deposits:", error);
       return false;
     }
   }
@@ -371,13 +472,13 @@ class PaymentController {
       if (!challengeId && !gameId) {
         return res.status(400).json({
           success: false,
-          message: 'Either challengeId or gameId is required'
+          message: "Either challengeId or gameId is required",
         });
       }
 
       let query = `
         SELECT * FROM payments 
-        WHERE ${challengeId ? 'challenge_id = $1' : 'game_id = $1'}
+        WHERE ${challengeId ? "challenge_id = $1" : "game_id = $1"}
         ORDER BY created_at DESC;
       `;
 
@@ -385,15 +486,14 @@ class PaymentController {
 
       res.json({
         success: true,
-        data: result.rows
+        data: result.rows,
       });
-
     } catch (error) {
-      console.error('Error getting payment status:', error);
+      console.error("Error getting payment status:", error);
       res.status(500).json({
         success: false,
-        message: 'Failed to get payment status',
-        error: error.message
+        message: "Failed to get payment status",
+        error: error.message,
       });
     }
   }
@@ -401,7 +501,9 @@ class PaymentController {
   // Process game payout based on outcome
   async processGamePayout(gameId, result, challengerData, opponentData) {
     try {
-      console.log(`Processing payout for game ${gameId} with result: ${result}`);
+      console.log(
+        `Processing payout for game ${gameId} with result: ${result}`
+      );
 
       // Get payment details for this game's challenge
       const challengeQuery = `
@@ -415,7 +517,7 @@ class PaymentController {
       const challengeResult = await pool.query(challengeQuery, [gameId]);
 
       if (challengeResult.rows.length === 0) {
-        console.log('No payment challenge found for challenge:', gameId);
+        console.log("No payment challenge found for challenge:", gameId);
         return;
       }
 
@@ -423,46 +525,96 @@ class PaymentController {
       const betAmount = challenge.amount;
 
       if (!betAmount || betAmount <= 0) {
-        console.log('No bet amount for challenge:', gameId);
+        console.log("No bet amount for challenge:", gameId);
         return;
       }
 
       // Determine payout logic based on result
       const drawResults = [
-        'insufficient', 'timevsinsufficient', 'repetition', 'threefold_repetition',
-        'stalemate', 'agreed', 'fifty_move', 'aborted'
+        "insufficient",
+        "timevsinsufficient",
+        "repetition",
+        "threefold_repetition",
+        "stalemate",
+        "agreed",
+        "fifty_move",
+        "aborted",
       ];
 
-      const winResults = ['win'];
+      const winResults = ["win"];
       const opponentWinResults = [
-        'resigned', 'timeout', 'checkmated', 'abandoned', 'adjudication', 'rule_violation'
+        "resigned",
+        "timeout",
+        "checkmated",
+        "abandoned",
+        "adjudication",
+        "rule_violation",
       ];
 
       if (drawResults.includes(result)) {
         // Refund both players
-        await this.refundPlayer(challengerData.id, challenge.challenger_phone, betAmount, gameId, 'draw_refund');
-        await this.refundPlayer(opponentData.id, challenge.opponent_phone, betAmount, gameId, 'draw_refund');
+        await this.refundPlayer(
+          challengerData.id,
+          challenge.challenger_phone,
+          betAmount,
+          gameId,
+          "draw_refund"
+        );
+        await this.refundPlayer(
+          opponentData.id,
+          challenge.opponent_phone,
+          betAmount,
+          gameId,
+          "draw_refund"
+        );
       } else if (winResults.includes(result)) {
         // Challenger wins - pay out double amount
-        await this.payoutWinner(challengerData.id, challenge.challenger_phone, betAmount * 2, gameId, 'game_win');
+        await this.payoutWinner(
+          challengerData.id,
+          challenge.challenger_phone,
+          betAmount * 2,
+          gameId,
+          "game_win"
+        );
       } else if (opponentWinResults.includes(result)) {
-        // Opponent wins - pay out double amount  
-        await this.payoutWinner(opponentData.id, challenge.opponent_phone, betAmount * 2, gameId, 'game_win');
+        // Opponent wins - pay out double amount
+        await this.payoutWinner(
+          opponentData.id,
+          challenge.opponent_phone,
+          betAmount * 2,
+          gameId,
+          "game_win"
+        );
       } else {
         // Unknown result - treat as draw and refund both
         console.log(`Unknown result ${result}, treating as draw`);
-        await this.refundPlayer(challengerData.id, challenge.challenger_phone, betAmount, gameId, 'unknown_result_refund');
-        await this.refundPlayer(opponentData.id, challenge.opponent_phone, betAmount, gameId, 'unknown_result_refund');
+        await this.refundPlayer(
+          challengerData.id,
+          challenge.challenger_phone,
+          betAmount,
+          gameId,
+          "unknown_result_refund"
+        );
+        await this.refundPlayer(
+          opponentData.id,
+          challenge.opponent_phone,
+          betAmount,
+          gameId,
+          "unknown_result_refund"
+        );
       }
-
     } catch (error) {
-      console.error('Error processing game payout:', error);
+      console.error("Error processing game payout:", error);
     }
   }
 
   async refundPlayer(userId, phoneNumber, amount, gameId, reason) {
     try {
-      await paymentService.initiateWithdrawal(phoneNumber, amount, `REFUND_${gameId}_${userId}_${Date.now()}`);
+      await paymentService.initiateWithdrawal(
+        phoneNumber,
+        amount,
+        `REFUND_${gameId}_${userId}_${Date.now()}`
+      );
       console.log(`Refunded ${amount} to ${phoneNumber} for reason: ${reason}`);
     } catch (error) {
       console.error(`Failed to refund ${amount} to ${phoneNumber}:`, error);
@@ -471,7 +623,11 @@ class PaymentController {
 
   async payoutWinner(userId, phoneNumber, amount, gameId, reason) {
     try {
-      await paymentService.initiateWithdrawal(phoneNumber, amount, `PAYOUT_${gameId}_${userId}_${Date.now()}`);
+      await paymentService.initiateWithdrawal(
+        phoneNumber,
+        amount,
+        `PAYOUT_${gameId}_${userId}_${Date.now()}`
+      );
       console.log(`Paid out ${amount} to ${phoneNumber} for reason: ${reason}`);
     } catch (error) {
       console.error(`Failed to payout ${amount} to ${phoneNumber}:`, error);

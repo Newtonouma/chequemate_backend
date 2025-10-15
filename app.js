@@ -9,6 +9,8 @@ import OngoingMatch from "./models/OngoingMatch.js";
 // OLD: import MatchResultChecker from './services/MatchResultChecker.js'; // Replaced by PerMatchResultChecker
 import PerMatchResultChecker from "./services/PerMatchResultChecker.js";
 import paymentService from "./services/paymentService.js";
+import monitoringService from "./services/monitoringService.js";
+import migrationRunner from "./utils/migrationRunner.js";
 
 import authRoutes from "./routes/auth.js";
 import challengeRoutes from "./routes/challengeRoutes.js";
@@ -20,6 +22,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import paymentController from "./controllers/paymentController.js";
 import statsRoutes from "./routes/statsRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
+import monitoringRoutes from "./routes/monitoringRoutes.js";
 
 dotenv.config();
 
@@ -32,8 +35,9 @@ const io = new SocketIOServer(server, {
   },
 });
 
-// Set Socket.IO instance in payment controller for event emissions
+// Set Socket.IO instance in payment controller and match result checker for event emissions
 paymentController.constructor.setSocketIO(io);
+PerMatchResultChecker.setSocketIO(io);
 
 app.set("socketio", io);
 
@@ -709,6 +713,24 @@ app.use("/api/match-results", matchResultRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/wallet", walletRoutes);
+app.use("/api/monitoring", monitoringRoutes);
+
+// Database migration status endpoint
+app.get("/api/migrations/status", async (req, res) => {
+  try {
+    const status = await migrationRunner.getStatus();
+    res.json({
+      success: true,
+      ...status,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 // Per-match checker status endpoint
 app.get("/api/match-checker/status", (req, res) => {
@@ -739,19 +761,56 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3002;
 
-// Test PostgreSQL connection
-pool.connect((err, client, release) => {
-  if (err) {
-    return console.error("Error acquiring client", err.stack);
+// Run database migrations before starting server
+(async () => {
+  try {
+    console.log("🔄 [STARTUP] Running database migrations...");
+    await migrationRunner.runAll();
+    console.log("✅ [STARTUP] Migrations completed successfully");
+
+    // Test PostgreSQL connection
+    pool.connect((err, client, release) => {
+      if (err) {
+        console.error(
+          "❌ [STARTUP] Error acquiring PostgreSQL client:",
+          err.stack
+        );
+        process.exit(1);
+      }
+      client.query("SELECT NOW()", (err, result) => {
+        release();
+        if (err) {
+          console.error(
+            "❌ [STARTUP] Error executing PostgreSQL query:",
+            err.stack
+          );
+          process.exit(1);
+        }
+        console.log("✅ [STARTUP] PostgreSQL connected:", result.rows[0].now);
+      });
+    });
+
+    // Start server after migrations
+    server.listen(PORT, () => {
+      console.log(`✅ [STARTUP] Server is running on port ${PORT}`);
+
+      // OLD: Initialize match result checker (replaced by PerMatchResultChecker)
+      // const matchChecker = new MatchResultChecker(io);
+      console.log(
+        "🎯 [STARTUP] Per-match result checking system ready (old backup checker disabled)"
+      );
+
+      // Initialize checkers for existing matches that need result checking
+      initializeExistingMatches();
+    });
+  } catch (error) {
+    console.error("🚨 [STARTUP] CRITICAL ERROR during startup:");
+    console.error("❌ [STARTUP] Error:", error.message);
+    console.error("❌ [STARTUP] Stack:", error.stack);
+    console.error("🛑 [STARTUP] Application cannot start. Exiting...");
+    process.exit(1); // Exit with error code
   }
-  client.query("SELECT NOW()", (err, result) => {
-    release();
-    if (err) {
-      return console.error("Error executing query", err.stack);
-    }
-    console.log("PostgreSQL connected:", result.rows);
-  });
-});
+})();
 
 // Cleanup handlers for graceful shutdown
 process.on("SIGINT", () => {
@@ -764,19 +823,6 @@ process.on("SIGTERM", () => {
   console.log("\n🛑 Received SIGTERM, cleaning up...");
   PerMatchResultChecker.cleanup();
   process.exit(0);
-});
-
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-
-  // OLD: Initialize match result checker (replaced by PerMatchResultChecker)
-  // const matchChecker = new MatchResultChecker(io);
-  console.log(
-    "🎯 Per-match result checking system ready (old backup checker disabled)"
-  );
-
-  // Initialize checkers for existing matches that need result checking
-  initializeExistingMatches();
 });
 
 // Initialize checkers for matches that are waiting for results after server restart
