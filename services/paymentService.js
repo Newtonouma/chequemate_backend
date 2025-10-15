@@ -263,8 +263,7 @@ class PaymentService {
         );
 
         // Instead of M-Pesa withdrawal, credit to user's platform balance
-        // TODO: Implement user balance system in future
-        // For now, just record the pending credit
+        // Record as "withdrawal" type but credit to balance (status = completed)
         const requestId = `${
           isRefund ? "REF" : "BAL"
         }_${numericChallengeId}_${numericUserId}_${Date.now()}`;
@@ -274,10 +273,10 @@ class PaymentService {
           challenge_id: numericChallengeId,
           phone_number: normalizedPhone,
           amount: numericAmount,
-          transaction_type: "balance_credit",
+          transaction_type: "withdrawal", // Use allowed type
           status: "completed",
           request_id: requestId,
-          notes: `Amount below minimum payout (${MINIMUM_PAYOUT}), credited to user balance`,
+          notes: `Amount below minimum payout (${MINIMUM_PAYOUT}), credited to user balance instead`,
         };
 
         const query = `INSERT INTO payments 
@@ -295,8 +294,16 @@ class PaymentService {
           paymentData.notes,
         ]);
 
+        // Actually credit the user's balance
+        await pool.query(
+          `UPDATE users 
+           SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP 
+           WHERE id = $2`,
+          [numericAmount, numericUserId]
+        );
+
         console.log(
-          `✅ [WITHDRAW] Small amount credited to user balance: ${numericAmount} KSH`
+          `✅ [WITHDRAW] Small amount credited to user balance: ${numericAmount} KSH (User ID: ${numericUserId})`
         );
         return {
           success: true,
