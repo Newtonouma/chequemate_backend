@@ -15,7 +15,7 @@ const pool = new Pool({
         }
       : false,
   // Add connection resilience
-  max: 10,
+  max: 20, // Increased from 10 to handle more concurrent users
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   acquireTimeoutMillis: 60000,
