@@ -202,6 +202,12 @@ class PaymentController {
     let requestId = payload.originatorRequestId || payload.requestId;
 
     if (requestId) {
+      // Strip ONIT prefix if present (e.g., "1003|DEP_72_2_1760573288599" → "DEP_72_2_1760573288599")
+      const prefixMatch = requestId.match(/^\d+\|(.+)$/);
+      if (prefixMatch && prefixMatch[1]) {
+        console.log(`🔍 [CALLBACK] Stripped prefix from request ID: "${requestId}" → "${prefixMatch[1]}"`);
+        return prefixMatch[1];
+      }
       return requestId;
     }
 
