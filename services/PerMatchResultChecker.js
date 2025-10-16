@@ -667,8 +667,8 @@ class PerMatchResultChecker {
           `INSERT INTO payments 
            (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes) 
            VALUES 
-           ($1, $2, $3, $4, 'balance_credit', 'completed', $5, $6),
-           ($7, $2, $8, $4, 'balance_credit', 'completed', $9, $6)`,
+           ($1, $2, $3, $4, 'refund', 'completed', $5, $6),
+           ($7, $2, $8, $4, 'refund', 'completed', $9, $6)`,
           [
             match.challenger,
             match.challenge_id,
