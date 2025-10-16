@@ -5,7 +5,7 @@
 
 import express from 'express';
 import queueMonitorController from '../controllers/queueMonitorController.js';
-import { authenticate } from '../middleware/auth.js';
+import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -13,7 +13,7 @@ const router = express.Router();
 router.get('/health', queueMonitorController.healthCheck);
 
 // Protected monitoring endpoints (require authentication)
-router.get('/stats', authenticate, queueMonitorController.getQueueStats);
-router.get('/failures', authenticate, queueMonitorController.getRecentFailures);
+router.get('/stats', protect, queueMonitorController.getQueueStats);
+router.get('/failures', protect, queueMonitorController.getRecentFailures);
 
 export default router;
