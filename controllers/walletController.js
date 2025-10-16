@@ -31,18 +31,43 @@ export const getWallet = asyncHandler(async (req, res) => {
 
     // Helper function to determine if transaction is credit or debit
     const getCreditDebitType = (transactionType) => {
-      const creditTypes = ['deposit', 'refund', 'balance_credit', 'win', 'reward'];
-      const debitTypes = ['withdrawal', 'bet', 'stake', 'fee'];
+      // Money coming IN (GREEN) - deposits, winnings, refunds, credits
+      const creditTypes = [
+        'deposit',           // M-PESA deposits
+        'refund',            // Auto-refunds from cancelled matches
+        'balance_credit',    // Small winnings (<10 KSH) credited to balance
+        'win',               // Match winnings
+        'payout',            // Payouts (winnings paid out or credited)
+        'reward',            // Bonuses/rewards
+        'bonus',             // Promotional bonuses
+        'cashback',          // Cashback credits
+      ];
       
-      // Check if it's a credit (money coming in - GREEN)
-      if (creditTypes.some(type => transactionType.toLowerCase().includes(type))) {
-        return 'credit';
-      }
-      // Check if it's a debit (money going out - RED)
-      if (debitTypes.some(type => transactionType.toLowerCase().includes(type))) {
+      // Money going OUT (RED) - withdrawals, bets, stakes, fees
+      const debitTypes = [
+        'withdrawal',        // M-PESA withdrawals from balance
+        'bet',               // Stakes/bets placed using wallet balance
+        'stake',             // Match entry fees paid from wallet
+        'fee',               // Transaction fees
+        'charge',            // Service charges
+        'deduction',         // Any deductions
+        'spend',             // General spending from wallet
+      ];
+      
+      const lowerType = transactionType.toLowerCase();
+      
+      // Check if it's explicitly a debit (money going out - RED)
+      if (debitTypes.some(type => lowerType.includes(type))) {
         return 'debit';
       }
-      // Default: if it's not clearly a debit, treat as credit
+      
+      // Check if it's a credit (money coming in - GREEN)
+      if (creditTypes.some(type => lowerType.includes(type))) {
+        return 'credit';
+      }
+      
+      // Default: treat unknown types as credit (safer to assume money IN)
+      console.log(`⚠️ Unknown transaction type "${transactionType}", defaulting to credit`);
       return 'credit';
     };
 
@@ -52,7 +77,7 @@ export const getWallet = asyncHandler(async (req, res) => {
       minimumWithdrawal: 10, // Include minimum withdrawal threshold
       transactions: transactions.map((t) => ({
         id: t.id,
-        type: getCreditDebitType(t.transaction_type), // Map to 'credit' or 'debit' for UI
+        type: getCreditDebitType(t.transaction_type), // Map to 'credit' or 'debit' for UI colors
         transactionType: t.transaction_type, // Keep original type for reference
         amount: parseFloat(t.amount),
         description: t.notes || `${t.transaction_type} transaction`,

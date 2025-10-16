@@ -263,7 +263,7 @@ class PaymentService {
         );
 
         // Instead of M-Pesa withdrawal, credit to user's platform balance
-        // Record as "withdrawal" type but credit to balance (status = completed)
+        // Record as "balance_credit" type so it shows as GREEN in wallet (money IN)
         const requestId = `${
           isRefund ? "REF" : "BAL"
         }_${numericChallengeId}_${numericUserId}_${Date.now()}`;
@@ -273,10 +273,12 @@ class PaymentService {
           challenge_id: numericChallengeId,
           phone_number: normalizedPhone,
           amount: numericAmount,
-          transaction_type: "withdrawal", // Use allowed type
+          transaction_type: isRefund ? "refund" : "balance_credit", // GREEN: money going INTO wallet
           status: "completed",
           request_id: requestId,
-          notes: `Amount below minimum payout (${MINIMUM_PAYOUT}), credited to user balance instead`,
+          notes: isRefund 
+            ? `Refund credited to balance (below ${MINIMUM_PAYOUT} KSH minimum)`
+            : `Winnings credited to balance (below ${MINIMUM_PAYOUT} KSH minimum)`,
         };
 
         const query = `INSERT INTO payments 
