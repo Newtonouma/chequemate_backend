@@ -242,6 +242,7 @@ class PaymentController {
       // Extract request ID using helper function
       const originatorRequestId = this.extractRequestId(req.body);
       const onitStatus = req.body.status;
+      const transactionReference = req.body.transactionReference;
       const transactionId = req.body.transactionId;
       const timestamp = req.body.timestamp;
 
@@ -257,24 +258,33 @@ class PaymentController {
       }
 
       // Map ONIT status to our internal status
+      // If transactionReference exists, assume success (ONIT doesn't always send status field)
       let mappedStatus = "pending";
-      const statusLower = (onitStatus || "").toLowerCase();
-      if (statusLower.includes("success") || statusLower.includes("complete")) {
+      
+      if (transactionReference) {
+        // If ONIT provides a transaction reference, payment is successful
         mappedStatus = "completed";
-      } else if (
-        statusLower.includes("fail") ||
-        statusLower.includes("error")
-      ) {
-        mappedStatus = "failed";
-      } else if (
-        statusLower.includes("pend") ||
-        statusLower.includes("processing")
-      ) {
-        mappedStatus = "processing";
+        console.log(`✅ [CALLBACK] Transaction reference found: ${transactionReference} → marking as completed`);
+      } else if (onitStatus) {
+        // Fallback to status field if present
+        const statusLower = onitStatus.toLowerCase();
+        if (statusLower.includes("success") || statusLower.includes("complete")) {
+          mappedStatus = "completed";
+        } else if (
+          statusLower.includes("fail") ||
+          statusLower.includes("error")
+        ) {
+          mappedStatus = "failed";
+        } else if (
+          statusLower.includes("pend") ||
+          statusLower.includes("processing")
+        ) {
+          mappedStatus = "processing";
+        }
       }
 
       console.log(
-        `📊 [CALLBACK] Status mapping: "${onitStatus}" → "${mappedStatus}"`
+        `📊 [CALLBACK] Status mapping: "${onitStatus || 'undefined'}" → "${mappedStatus}" (txRef: ${transactionReference || 'none'})`
       );
 
       // Update payment status in database
@@ -291,7 +301,7 @@ class PaymentController {
 
       const result = await pool.query(updateQuery, [
         mappedStatus,
-        transactionId,
+        transactionReference || transactionId, // Use transactionReference if available
         JSON.stringify(req.body),
         originatorRequestId,
       ]);
