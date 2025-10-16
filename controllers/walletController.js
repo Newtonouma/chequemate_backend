@@ -29,13 +29,31 @@ export const getWallet = asyncHandler(async (req, res) => {
     const balance = balanceResult.rows[0]?.balance || 0.0;
     const transactions = transactionsResult.rows;
 
+    // Helper function to determine if transaction is credit or debit
+    const getCreditDebitType = (transactionType) => {
+      const creditTypes = ['deposit', 'refund', 'balance_credit', 'win', 'reward'];
+      const debitTypes = ['withdrawal', 'bet', 'stake', 'fee'];
+      
+      // Check if it's a credit (money coming in - GREEN)
+      if (creditTypes.some(type => transactionType.toLowerCase().includes(type))) {
+        return 'credit';
+      }
+      // Check if it's a debit (money going out - RED)
+      if (debitTypes.some(type => transactionType.toLowerCase().includes(type))) {
+        return 'debit';
+      }
+      // Default: if it's not clearly a debit, treat as credit
+      return 'credit';
+    };
+
     res.json({
       balance: parseFloat(balance),
       currency: "KES",
       minimumWithdrawal: 10, // Include minimum withdrawal threshold
       transactions: transactions.map((t) => ({
         id: t.id,
-        type: t.transaction_type,
+        type: getCreditDebitType(t.transaction_type), // Map to 'credit' or 'debit' for UI
+        transactionType: t.transaction_type, // Keep original type for reference
         amount: parseFloat(t.amount),
         description: t.notes || `${t.transaction_type} transaction`,
         referenceId: t.request_id,
