@@ -44,67 +44,46 @@ class PaymentController {
 
       // Initiate deposit with payment service
       console.log(`📞 [DEPOSIT] Calling payment service with:`, {
-        sourceAccount: phoneNumber,
+        phoneNumber: phoneNumber,
         amount: amount,
-        requestId: requestId,
-        destinationAccount: "0001650000002",
+        userId: userId,
+        challengeId: challengeId,
       });
 
       const depositResult = await paymentService.initiateDeposit(
         phoneNumber,
         amount,
-        requestId
+        userId,
+        challengeId
       );
 
       console.log(`📋 [DEPOSIT] Payment service response:`, {
-        status: depositResult.status,
+        success: depositResult.success,
         data: depositResult.data,
-        requestId: depositResult.requestId,
+        apiResponse: depositResult.apiResponse,
       });
 
-      // Store payment record in database
-      console.log(`💾 [DEPOSIT] Storing payment record in database...`);
-      const insertQuery = `
-        INSERT INTO payments (
-          challenge_id, 
-          user_id, 
-          phone_number, 
-          amount, 
-          transaction_type, 
-          request_id, 
-          status, 
-          created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-        RETURNING *;
-      `;
+      // Check if deposit was successful
+      if (!depositResult.success) {
+        console.error(`❌ [DEPOSIT] Payment service error:`, depositResult.error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to initiate deposit",
+          error: depositResult.error,
+        });
+      }
 
-      const paymentRecord = await pool.query(insertQuery, [
-        challengeId,
-        userId,
-        phoneNumber,
-        amount,
-        "deposit",
-        requestId,
-        "pending",
-      ]);
-
-      console.log(`✅ [DEPOSIT] Payment record stored:`, {
-        paymentId: paymentRecord.rows[0].id,
-        phoneNumber: phoneNumber,
-        amount: amount,
-        requestId: requestId,
-      });
+      console.log(`✅ [DEPOSIT] Deposit initiated successfully`);
 
       const responseData = {
         success: true,
         message: "Deposit initiated successfully",
         data: {
-          paymentId: paymentRecord.rows[0].id,
-          requestId: requestId,
+          paymentId: depositResult.data.id,
+          requestId: depositResult.data.request_id,
           amount: amount,
           phoneNumber: phoneNumber,
-          depositResponse: depositResult,
+          apiResponse: depositResult.apiResponse,
         },
       };
 
