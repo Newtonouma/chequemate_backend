@@ -80,6 +80,40 @@ export const getWallet = asyncHandler(async (req, res) => {
       return 'credit';
     };
 
+    // Helper function to generate user-friendly description
+    const getTransactionDescription = (transactionType, notes, amount) => {
+      // Use notes if available
+      if (notes && notes.trim()) {
+        return notes;
+      }
+      
+      // Generate friendly descriptions based on transaction type
+      const amountStr = `${parseFloat(amount).toFixed(2)} KSH`;
+      
+      switch (transactionType.toLowerCase()) {
+        case 'deposit':
+          return `Deposit - ${amountStr}`;
+        case 'refund':
+          return `Refund - withdrawn to M-PESA (${amountStr})`;
+        case 'payout':
+          return `Winnings - withdrawn to M-PESA (${amountStr})`;
+        case 'balance_credit':
+          return `Winnings credited to balance (${amountStr})`;
+        case 'withdrawal':
+          return `Withdrawal to M-PESA (${amountStr})`;
+        case 'bet':
+        case 'stake':
+          return `Bet placed - ${amountStr}`;
+        case 'win':
+          return `Match winnings - ${amountStr}`;
+        case 'reward':
+        case 'bonus':
+          return `Bonus credited - ${amountStr}`;
+        default:
+          return `${transactionType} transaction - ${amountStr}`;
+      }
+    };
+
     res.json({
       balance: parseFloat(balance),
       currency: "KES",
@@ -89,7 +123,7 @@ export const getWallet = asyncHandler(async (req, res) => {
         type: getCreditDebitType(t.transaction_type, t.notes), // Map to 'credit' or 'debit' for UI colors (pass notes for special cases)
         transactionType: t.transaction_type, // Keep original type for reference
         amount: parseFloat(t.amount),
-        description: t.notes || `${t.transaction_type} transaction`,
+        description: getTransactionDescription(t.transaction_type, t.notes, t.amount),
         referenceId: t.request_id,
         status: t.status,
         date: t.created_at,

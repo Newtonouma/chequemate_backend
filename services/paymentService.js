@@ -319,7 +319,7 @@ class PaymentService {
         isRefund ? "REF" : "PAY"
       }_${numericChallengeId}_${numericUserId}_${Date.now()}`;
 
-      // Record in database
+      // Record in database with descriptive notes
       const paymentData = {
         user_id: numericUserId,
         challenge_id: numericChallengeId,
@@ -328,11 +328,14 @@ class PaymentService {
         transaction_type: isRefund ? "refund" : "payout",
         status: "pending",
         request_id: requestId,
+        notes: isRefund 
+          ? `Refund - withdrawn to M-PESA (${numericAmount} KSH)`
+          : `Winnings - withdrawn to M-PESA (${numericAmount} KSH)`,
       };
 
       const query = `INSERT INTO payments 
-        (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`;
+        (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`;
 
       const result = await pool.query(query, [
         paymentData.user_id,
@@ -342,6 +345,7 @@ class PaymentService {
         paymentData.transaction_type,
         paymentData.status,
         paymentData.request_id,
+        paymentData.notes,
       ]);
 
       // Get access token
