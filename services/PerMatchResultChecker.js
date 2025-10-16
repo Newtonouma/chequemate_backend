@@ -697,7 +697,6 @@ class PerMatchResultChecker {
          SET result_checked = TRUE, 
              result = 'no_result_refunded',
              match_result = $2,
-             notes = 'No result found after ${this.maxChecksPerMatch} attempts. Both players refunded.',
              completed_at = NOW()
          WHERE id = $1`,
         [
@@ -707,6 +706,7 @@ class PerMatchResultChecker {
             refund_type: betAmount > 10 ? "mpesa" : "wallet",
             amount_refunded: betAmount,
             reason: `Match result not found after ${this.maxChecksPerMatch} check attempts`,
+            note: `No result found after ${this.maxChecksPerMatch} attempts. Both players refunded.`,
           }),
         ]
       );
