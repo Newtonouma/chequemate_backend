@@ -30,7 +30,16 @@ export const getWallet = asyncHandler(async (req, res) => {
     const transactions = transactionsResult.rows;
 
     // Helper function to determine if transaction is credit or debit
-    const getCreditDebitType = (transactionType) => {
+    const getCreditDebitType = (transactionType, notes) => {
+      // SPECIAL CASE: Old transactions that were mis-labeled as "withdrawal" 
+      // but were actually balance credits (check notes field)
+      if (transactionType.toLowerCase() === 'withdrawal' && notes) {
+        if (notes.toLowerCase().includes('credited to user balance') || 
+            notes.toLowerCase().includes('credited to balance')) {
+          return 'credit'; // These are actually credits (GREEN), not withdrawals
+        }
+      }
+
       // Money coming IN (GREEN) - deposits, winnings, refunds, credits
       const creditTypes = [
         'deposit',           // M-PESA deposits
@@ -77,7 +86,7 @@ export const getWallet = asyncHandler(async (req, res) => {
       minimumWithdrawal: 10, // Include minimum withdrawal threshold
       transactions: transactions.map((t) => ({
         id: t.id,
-        type: getCreditDebitType(t.transaction_type), // Map to 'credit' or 'debit' for UI colors
+        type: getCreditDebitType(t.transaction_type, t.notes), // Map to 'credit' or 'debit' for UI colors (pass notes for special cases)
         transactionType: t.transaction_type, // Keep original type for reference
         amount: parseFloat(t.amount),
         description: t.notes || `${t.transaction_type} transaction`,
