@@ -14,11 +14,11 @@ export const getWallet = asyncHandler(async (req, res) => {
       [userId]
     );
 
-    // Get recent transactions (last 20)
+    // Get recent transactions from payments table (last 20)
     const transactionsResult = await pool.query(
       `
-      SELECT id, type, amount, description, reference_id, status, created_at
-      FROM transactions 
+      SELECT id, transaction_type, amount, status, notes, created_at, request_id
+      FROM payments 
       WHERE user_id = $1 
       ORDER BY created_at DESC 
       LIMIT 20
@@ -32,12 +32,13 @@ export const getWallet = asyncHandler(async (req, res) => {
     res.json({
       balance: parseFloat(balance),
       currency: "KES",
+      minimumWithdrawal: 10, // Include minimum withdrawal threshold
       transactions: transactions.map((t) => ({
         id: t.id,
-        type: t.type,
+        type: t.transaction_type,
         amount: parseFloat(t.amount),
-        description: t.description,
-        referenceId: t.reference_id,
+        description: t.notes || `${t.transaction_type} transaction`,
+        referenceId: t.request_id,
         status: t.status,
         date: t.created_at,
       })),
