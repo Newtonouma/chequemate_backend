@@ -14,16 +14,41 @@ const pool = new Pool({
           rejectUnauthorized: false,
         }
       : false,
-  // Add connection resilience
-  max: 20, // Increased from 10 to handle more concurrent users
+  // ENHANCED CONNECTION POOL for high concurrency
+  max: 50, // Increased to 50 for concurrent users
+  min: 10, // Keep minimum connections alive
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   acquireTimeoutMillis: 60000,
+  // Allow reuse of connections
+  allowExitOnIdle: false,
 });
 
-// Add connection error handling
-pool.on("error", (err) => {
-  console.error("Unexpected error on idle client", err);
+// Enhanced connection monitoring
+pool.on("error", (err, client) => {
+  console.error("❌ [DB_POOL] Unexpected error on idle client:", err.message);
+  console.error(err.stack);
 });
+
+pool.on("connect", (client) => {
+  console.log("✅ [DB_POOL] New client connected");
+});
+
+pool.on("acquire", (client) => {
+  console.log("🔒 [DB_POOL] Client acquired from pool");
+});
+
+pool.on("remove", (client) => {
+  console.log("🗑️ [DB_POOL] Client removed from pool");
+});
+
+// Log pool metrics every minute in production
+if (process.env.NODE_ENV === "production") {
+  setInterval(() => {
+    console.log(
+      `📊 [DB_POOL] Total: ${pool.totalCount} | Idle: ${pool.idleCount} | Waiting: ${pool.waitingCount}`
+    );
+  }, 60000);
+}
 
 export default pool;

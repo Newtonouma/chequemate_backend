@@ -31,53 +31,57 @@ export const getWallet = asyncHandler(async (req, res) => {
 
     // Helper function to determine if transaction is credit or debit
     const getCreditDebitType = (transactionType, notes) => {
-      // SPECIAL CASE: Old transactions that were mis-labeled as "withdrawal" 
+      // SPECIAL CASE: Old transactions that were mis-labeled as "withdrawal"
       // but were actually balance credits (check notes field)
-      if (transactionType.toLowerCase() === 'withdrawal' && notes) {
-        if (notes.toLowerCase().includes('credited to user balance') || 
-            notes.toLowerCase().includes('credited to balance')) {
-          return 'credit'; // These are actually credits (GREEN), not withdrawals
+      if (transactionType.toLowerCase() === "withdrawal" && notes) {
+        if (
+          notes.toLowerCase().includes("credited to user balance") ||
+          notes.toLowerCase().includes("credited to balance")
+        ) {
+          return "credit"; // These are actually credits (GREEN), not withdrawals
         }
       }
 
       // Money coming IN (GREEN) - deposits, winnings, refunds, credits
       const creditTypes = [
-        'deposit',           // M-PESA deposits
-        'refund',            // Auto-refunds from cancelled matches
-        'balance_credit',    // Small winnings (<10 KSH) credited to balance
-        'win',               // Match winnings
-        'payout',            // Payouts (winnings paid out or credited)
-        'reward',            // Bonuses/rewards
-        'bonus',             // Promotional bonuses
-        'cashback',          // Cashback credits
+        "deposit", // M-PESA deposits
+        "refund", // Auto-refunds from cancelled matches
+        "balance_credit", // Small winnings (<10 KSH) credited to balance
+        "win", // Match winnings
+        "payout", // Payouts (winnings paid out or credited)
+        "reward", // Bonuses/rewards
+        "bonus", // Promotional bonuses
+        "cashback", // Cashback credits
       ];
-      
+
       // Money going OUT (RED) - withdrawals, bets, stakes, fees
       const debitTypes = [
-        'withdrawal',        // M-PESA withdrawals from balance
-        'bet',               // Stakes/bets placed using wallet balance
-        'stake',             // Match entry fees paid from wallet
-        'fee',               // Transaction fees
-        'charge',            // Service charges
-        'deduction',         // Any deductions
-        'spend',             // General spending from wallet
+        "withdrawal", // M-PESA withdrawals from balance
+        "bet", // Stakes/bets placed using wallet balance
+        "stake", // Match entry fees paid from wallet
+        "fee", // Transaction fees
+        "charge", // Service charges
+        "deduction", // Any deductions
+        "spend", // General spending from wallet
       ];
-      
+
       const lowerType = transactionType.toLowerCase();
-      
+
       // Check if it's explicitly a debit (money going out - RED)
-      if (debitTypes.some(type => lowerType.includes(type))) {
-        return 'debit';
+      if (debitTypes.some((type) => lowerType.includes(type))) {
+        return "debit";
       }
-      
+
       // Check if it's a credit (money coming in - GREEN)
-      if (creditTypes.some(type => lowerType.includes(type))) {
-        return 'credit';
+      if (creditTypes.some((type) => lowerType.includes(type))) {
+        return "credit";
       }
-      
+
       // Default: treat unknown types as credit (safer to assume money IN)
-      console.log(`⚠️ Unknown transaction type "${transactionType}", defaulting to credit`);
-      return 'credit';
+      console.log(
+        `⚠️ Unknown transaction type "${transactionType}", defaulting to credit`
+      );
+      return "credit";
     };
 
     // Helper function to generate user-friendly description
@@ -86,28 +90,28 @@ export const getWallet = asyncHandler(async (req, res) => {
       if (notes && notes.trim()) {
         return notes;
       }
-      
+
       // Generate friendly descriptions based on transaction type
       const amountStr = `${parseFloat(amount).toFixed(2)} KSH`;
-      
+
       switch (transactionType.toLowerCase()) {
-        case 'deposit':
+        case "deposit":
           return `Deposit - ${amountStr}`;
-        case 'refund':
+        case "refund":
           return `Refund - withdrawn to M-PESA (${amountStr})`;
-        case 'payout':
+        case "payout":
           return `Winnings - withdrawn to M-PESA (${amountStr})`;
-        case 'balance_credit':
+        case "balance_credit":
           return `Winnings credited to balance (${amountStr})`;
-        case 'withdrawal':
+        case "withdrawal":
           return `Withdrawal to M-PESA (${amountStr})`;
-        case 'bet':
-        case 'stake':
+        case "bet":
+        case "stake":
           return `Bet placed - ${amountStr}`;
-        case 'win':
+        case "win":
           return `Match winnings - ${amountStr}`;
-        case 'reward':
-        case 'bonus':
+        case "reward":
+        case "bonus":
           return `Bonus credited - ${amountStr}`;
         default:
           return `${transactionType} transaction - ${amountStr}`;
@@ -123,7 +127,11 @@ export const getWallet = asyncHandler(async (req, res) => {
         type: getCreditDebitType(t.transaction_type, t.notes), // Map to 'credit' or 'debit' for UI colors (pass notes for special cases)
         transactionType: t.transaction_type, // Keep original type for reference
         amount: parseFloat(t.amount),
-        description: getTransactionDescription(t.transaction_type, t.notes, t.amount),
+        description: getTransactionDescription(
+          t.transaction_type,
+          t.notes,
+          t.amount
+        ),
         referenceId: t.request_id,
         status: t.status,
         date: t.created_at,

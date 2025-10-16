@@ -276,7 +276,7 @@ class PaymentService {
           transaction_type: isRefund ? "refund" : "balance_credit", // GREEN: money going INTO wallet
           status: "completed",
           request_id: requestId,
-          notes: isRefund 
+          notes: isRefund
             ? `Refund credited to balance (below ${MINIMUM_PAYOUT} KSH minimum)`
             : `Winnings credited to balance (below ${MINIMUM_PAYOUT} KSH minimum)`,
         };
@@ -328,7 +328,7 @@ class PaymentService {
         transaction_type: isRefund ? "refund" : "payout",
         status: "pending",
         request_id: requestId,
-        notes: isRefund 
+        notes: isRefund
           ? `Refund - withdrawn to M-PESA (${numericAmount} KSH)`
           : `Winnings - withdrawn to M-PESA (${numericAmount} KSH)`,
       };

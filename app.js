@@ -23,6 +23,8 @@ import paymentController from "./controllers/paymentController.js";
 import statsRoutes from "./routes/statsRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monitoringRoutes from "./routes/monitoringRoutes.js";
+import queueMonitorRoutes from "./routes/queueMonitorRoutes.js";
+import { apiTimeout } from "./middleware/timeout.js";
 
 dotenv.config();
 
@@ -702,6 +704,7 @@ io.on("connection", (socket) => {
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(apiTimeout()); // Add request timeout middleware
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -714,6 +717,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/monitoring", monitoringRoutes);
+app.use("/api/queue", queueMonitorRoutes); // Queue monitoring
 
 // Database migration status endpoint
 app.get("/api/migrations/status", async (req, res) => {
