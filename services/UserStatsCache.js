@@ -497,6 +497,15 @@ class UserStatsCache {
 
   // Invalidate cache for ongoing match (call when match completes)
   invalidateOngoingMatchCache(username, platform = "chess.com") {
+    // Safety check: ensure username is a string
+    if (!username || typeof username !== 'string') {
+      console.warn(
+        `⚠️ [USER_STATS_CACHE] Invalid username provided to invalidateOngoingMatchCache:`,
+        username
+      );
+      return;
+    }
+
     const cacheKey = `ongoing:${platform}:${username.toLowerCase()}`;
     const regularCacheKey = `${platform}:${username.toLowerCase()}`;
 

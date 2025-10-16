@@ -466,11 +466,11 @@ class PerMatchResultChecker {
 
       // Invalidate cache for both players (match completed, need fresh stats)
       userStatsCache.invalidateOngoingMatchCache(
-        match.challenger,
+        match.challenger_username,
         match.platform
       );
       userStatsCache.invalidateOngoingMatchCache(
-        match.opponent,
+        match.opponent_username,
         match.platform
       );
 
