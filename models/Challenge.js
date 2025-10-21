@@ -67,6 +67,10 @@ class Challenge {
         c.rules,
         c.status,
         c.created_at,
+        c.bet_amount,
+        c.payment_status,
+        c.challenger_phone,
+        c.opponent_phone,
         CASE 
           WHEN c.platform = 'chess.com' THEN challenger_user.chess_com_username 
           WHEN c.platform = 'lichess' THEN challenger_user.lichess_username 
@@ -91,7 +95,7 @@ class Challenge {
       const result = await pool.query(query, [userId]);
       return result.rows.map((row) => {
         // Format to match frontend expectations
-        return {
+        const challenge = {
           id: row.id,
           challenger: {
             id: row.challenger,
@@ -110,7 +114,19 @@ class Challenge {
           rules: row.rules,
           status: row.status,
           created_at: row.created_at,
+          bet_amount: row.bet_amount,
+          payment_status: row.payment_status,
         };
+        
+        // Add payment details if it's a payment challenge
+        if (row.bet_amount > 0) {
+          challenge.paymentDetails = {
+            amount: row.bet_amount,
+            phoneNumber: row.challenger_phone || row.opponent_phone,
+          };
+        }
+        
+        return challenge;
       });
     } catch (error) {
       throw error;

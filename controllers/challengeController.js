@@ -273,23 +273,36 @@ export const acceptChallenge = asyncHandler(async (req, res) => {
       const notificationData = {
         challengeId,
         challengerId: fullChallenge.challenger.id,
+        opponentId: fullChallenge.opponent.id,
         challengerUsername: fullChallenge.challenger.username,
         accepterUsername: fullChallenge.opponent.username,
+        opponentUsername: fullChallenge.opponent.username,
         challenge: fullChallenge,
         hasPayment: challenge.bet_amount > 0,
         paymentAmount: challenge.bet_amount,
+        platform: fullChallenge.platform,
       };
 
-      // Notify the challenger that their challenge was accepted
+      // Notify BOTH the challenger and opponent
       console.log(
-        "🔔 Emitting challengeAccepted to room:",
+        "🔔 Emitting challengeAccepted to challenger:",
         fullChallenge.challenger.id.toString()
       );
-      console.log("📤 challengeAccepted data:", notificationData);
       io.to(fullChallenge.challenger.id.toString()).emit(
         "challengeAccepted",
         notificationData
       );
+      
+      console.log(
+        "🔔 Emitting challengeAccepted to opponent:",
+        fullChallenge.opponent.id.toString()
+      );
+      io.to(fullChallenge.opponent.id.toString()).emit(
+        "challengeAccepted",
+        notificationData
+      );
+      
+      console.log("📤 challengeAccepted data:", notificationData);
     }
 
     res.json({

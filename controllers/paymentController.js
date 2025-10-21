@@ -309,10 +309,10 @@ class PaymentController {
         payment.user_id
       ) {
         console.log(
-          `💔 [CALLBACK] Emitting paymentFailed to user ${payment.user_id}`
+          `💔 [CALLBACK] Emitting payment-failed to user ${payment.user_id}`
         );
-        if (this.io) {
-          this.io.to(payment.user_id.toString()).emit("paymentFailed", {
+        if (io) {
+          io.to(payment.user_id.toString()).emit("payment-failed", {
             userId: payment.user_id,
             challengeId: payment.challenge_id,
             amount: payment.amount,
@@ -320,6 +320,26 @@ class PaymentController {
               req.body.message ||
               req.body.description ||
               "Payment failed. Please try again.",
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      // If this is a deposit callback and successful, notify the user
+      if (
+        payment.transaction_type === "deposit" &&
+        mappedStatus === "completed" &&
+        payment.user_id
+      ) {
+        console.log(
+          `🎉 [CALLBACK] Payment successful for user ${payment.user_id}, emitting payment-success`
+        );
+        if (io) {
+          io.to(payment.user_id.toString()).emit("payment-success", {
+            userId: payment.user_id,
+            challengeId: payment.challenge_id,
+            amount: payment.amount,
+            message: "Payment successful!",
             timestamp: new Date().toISOString(),
           });
         }
@@ -351,16 +371,69 @@ class PaymentController {
             const updateChallengeQuery = `
               UPDATE challenges 
               SET status = 'deposits_complete'
-              WHERE id = $1;
+              WHERE id = $1
+              RETURNING *;
             `;
 
-            await pool.query(updateChallengeQuery, [payment.challenge_id]);
+            const challengeResult = await pool.query(updateChallengeQuery, [payment.challenge_id]);
             console.log(
-              `✅ Both deposits complete for challenge ${payment.challenge_id}`
+              `✅ [CALLBACK] Both deposits complete for challenge ${payment.challenge_id}`
             );
+
+            // Get challenge details to notify both players
+            const challengeQuery = `
+              SELECT c.id, c.challenger, c.opponent, c.platform, c.bet_amount, c.time_control,
+                     CASE 
+                       WHEN c.platform = 'chess.com' THEN cu.chess_com_username 
+                       WHEN c.platform = 'lichess' THEN cu.lichess_username 
+                       ELSE cu.username 
+                     END as challenger_username,
+                     CASE 
+                       WHEN c.platform = 'chess.com' THEN ou.chess_com_username 
+                       WHEN c.platform = 'lichess' THEN ou.lichess_username 
+                       ELSE ou.username 
+                     END as opponent_username
+              FROM challenges c
+              JOIN users cu ON c.challenger = cu.id
+              JOIN users ou ON c.opponent = ou.id
+              WHERE c.id = $1;
+            `;
+
+            const challenge = await pool.query(challengeQuery, [payment.challenge_id]);
+
+            if (challenge.rows.length > 0 && io) {
+              const challengeData = challenge.rows[0];
+              
+              const notificationData = {
+                challengeId: challengeData.id,
+                challengerId: challengeData.challenger,
+                opponentId: challengeData.opponent,
+                platform: challengeData.platform,
+                betAmount: challengeData.bet_amount,
+                timeControl: challengeData.time_control,
+                challengerUsername: challengeData.challenger_username,
+                opponentUsername: challengeData.opponent_username,
+                message: "Both players have paid! Ready to start the match.",
+                timestamp: new Date().toISOString(),
+              };
+
+              // Emit to both players
+              io.to(challengeData.challenger.toString()).emit(
+                "both-payments-completed",
+                notificationData
+              );
+              io.to(challengeData.opponent.toString()).emit(
+                "both-payments-completed",
+                notificationData
+              );
+
+              console.log(
+                `📡 [CALLBACK] Emitted both-payments-completed to challenger ${challengeData.challenger} and opponent ${challengeData.opponent}`
+              );
+            }
           }
         } catch (depositError) {
-          console.error("⚠️ Error checking deposits:", depositError);
+          console.error("⚠️ [CALLBACK] Error checking deposits:", depositError);
           // Don't fail the callback response for this
         }
       }
