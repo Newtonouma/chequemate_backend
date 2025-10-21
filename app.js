@@ -70,14 +70,20 @@ io.on("connection", (socket) => {
       // Check for pending payment challenges and re-emit if user reconnected
       setTimeout(async () => {
         try {
+          // Only re-emit payment notifications if:
+          // 1. Challenge status is 'accepted' (not deposits_complete or started)
+          // 2. Challenge has bet_amount > 0
+          // 3. User hasn't paid yet OR only one player has paid
+          // 4. No ongoing match exists for this challenge
           const pendingChallenges = await pool.query(
             `
-            SELECT 
+            SELECT DISTINCT
               c.id,
               c.challenger,
               c.opponent,
               c.bet_amount,
               c.platform,
+              c.status as challenge_status,
               CASE 
                 WHEN c.platform = 'chess.com' THEN cu.chess_com_username 
                 WHEN c.platform = 'lichess' THEN cu.lichess_username 
@@ -87,25 +93,53 @@ io.on("connection", (socket) => {
                 WHEN c.platform = 'chess.com' THEN ou.chess_com_username 
                 WHEN c.platform = 'lichess' THEN ou.lichess_username 
                 ELSE ou.username 
-              END as opponent_username
+              END as opponent_username,
+              (
+                SELECT COUNT(*) 
+                FROM payments p 
+                WHERE p.challenge_id = c.id 
+                  AND p.transaction_type = 'deposit' 
+                  AND p.status = 'completed'
+              ) as completed_payments,
+              (
+                SELECT COUNT(*) 
+                FROM payments p 
+                WHERE p.challenge_id = c.id 
+                  AND p.user_id = $1
+                  AND p.transaction_type = 'deposit' 
+                  AND p.status = 'completed'
+              ) as user_paid,
+              (
+                SELECT COUNT(*)
+                FROM ongoing_matches om
+                WHERE om.challenge_id = c.id
+              ) as match_started
             FROM challenges c
             JOIN users cu ON c.challenger = cu.id
             JOIN users ou ON c.opponent = ou.id
             WHERE c.status = 'accepted'
             AND c.bet_amount > 0
-            AND c.payment_status = 'pending'
             AND (c.challenger = $1 OR c.opponent = $1)
             AND c.updated_at > NOW() - INTERVAL '10 minutes'
             `,
             [user.id]
           );
 
-          if (pendingChallenges.rows.length > 0) {
+          // Filter to only show notifications where user still needs to pay
+          // AND both payments are not complete AND match hasn't started
+          const validChallenges = pendingChallenges.rows.filter(
+            (challenge) =>
+              challenge.completed_payments < 2 && // Both haven't paid yet
+              challenge.user_paid === 0 && // This user hasn't paid
+              challenge.match_started === 0 // Match hasn't started
+          );
+
+          if (validChallenges.length > 0) {
             console.log(
-              `🔄 [RECONNECT] User ${user.id} has ${pendingChallenges.rows.length} pending payment challenge(s), re-emitting...`
+              `🔄 [RECONNECT] User ${user.id} has ${validChallenges.length} pending payment challenge(s), re-emitting...`
             );
 
-            for (const challenge of pendingChallenges.rows) {
+            for (const challenge of validChallenges) {
               const notificationData = {
                 challengeId: challenge.id,
                 challengerId: challenge.challenger,
@@ -124,9 +158,13 @@ io.on("connection", (socket) => {
               );
 
               console.log(
-                `✅ [RECONNECT] Re-emitted challengeAccepted for challenge ${challenge.id} to user ${user.id}`
+                `✅ [RECONNECT] Re-emitted challengeAccepted for challenge ${challenge.id} to user ${user.id} (${challenge.completed_payments}/2 payments complete)`
               );
             }
+          } else if (pendingChallenges.rows.length > 0) {
+            console.log(
+              `ℹ️ [RECONNECT] User ${user.id} has ${pendingChallenges.rows.length} challenge(s) but all are either paid/started - skipping notification`
+            );
           }
         } catch (error) {
           console.error(
@@ -567,6 +605,46 @@ io.on("connection", (socket) => {
             allFields: Object.keys(challengeData),
           }
         );
+
+        // 🔒 CRITICAL: Verify both players have paid before allowing redirect (if challenge has bet_amount)
+        if (challengeData.bet_amount > 0) {
+          const paymentCheck = await pool.query(
+            `
+            SELECT 
+              COUNT(*) as completed_payments,
+              array_agg(user_id) as paid_users
+            FROM payments 
+            WHERE challenge_id = $1 
+              AND transaction_type = 'deposit' 
+              AND status = 'completed'
+            `,
+            [challengeId]
+          );
+
+          const completedPayments = parseInt(paymentCheck.rows[0].completed_payments);
+          const paidUsers = paymentCheck.rows[0].paid_users || [];
+
+          if (completedPayments < 2) {
+            console.error(
+              `❌ [${new Date().toISOString()}] BLOCKED: User ${redirectedBy} tried to redirect but both payments not complete (${completedPayments}/2 paid)`,
+              { paidUsers }
+            );
+            
+            // Emit error to the user who tried to redirect
+            io.to(redirectedBy.toString()).emit("redirect-blocked", {
+              challengeId,
+              message: "Both players must complete payment before starting the game",
+              completedPayments,
+              requiredPayments: 2,
+            });
+            
+            return; // Block the redirect
+          }
+
+          console.log(
+            `✅ [${new Date().toISOString()}] Payment verification passed: ${completedPayments}/2 payments completed`
+          );
+        }
 
         const redirectedUser =
           redirectedBy === challengeData.challenger
