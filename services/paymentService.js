@@ -46,6 +46,9 @@ function normalizePhoneNumber(phone) {
 class PaymentService {
   constructor() {
     this.initialized = false;
+    // Simple in-memory request queue to serialize payment API calls
+    this.queue = [];
+    this.processing = false;
     this.initializeToken();
   }
 
@@ -63,12 +66,41 @@ class PaymentService {
     }
   }
 
+  // Enqueue a task that will run with a fresh auth token; tasks are processed sequentially
+  enqueueRequest(taskName, taskFn) {
+    return new Promise((resolve, reject) => {
+      const job = { taskName, taskFn, resolve, reject };
+      this.queue.push(job);
+      this._processQueue();
+    });
+  }
+
+  async _processQueue() {
+    if (this.processing) return;
+    this.processing = true;
+
+    while (this.queue.length > 0) {
+      const { taskName, taskFn, resolve, reject } = this.queue.shift();
+      try {
+        // Always fetch a fresh token for each queued request
+        const accessToken = await tokenManager.refreshToken();
+        const result = await taskFn(accessToken);
+        resolve(result);
+      } catch (err) {
+        console.error(`❌ [QUEUE] Task failed (${taskName}):`, err?.response?.data || err?.message || err);
+        reject(err);
+      }
+    }
+
+    this.processing = false;
+  }
+
   async initiateDeposit(phoneNumber, amount, userId, challengeId) {
     try {
       // Normalize phone number to +254 format
       const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
-      console.log("🏦 [DEPOSIT] Starting deposit initiation:", {
+      console.log("🏬 [DEPOSIT] Starting deposit initiation:", {
         phoneNumber: normalizedPhone,
         originalPhone: phoneNumber,
         amount,
@@ -89,6 +121,23 @@ class PaymentService {
       const numericUserId = Number(userId);
       const numericChallengeId = Number(challengeId);
       const numericAmount = Number(amount);
+      
+      // Get opponent information from challenge
+      let opponentId = null;
+      try {
+        const challengeQuery = await pool.query(
+          'SELECT challenger, opponent FROM challenges WHERE id = $1',
+          [numericChallengeId]
+        );
+        if (challengeQuery.rows.length > 0) {
+          const challenge = challengeQuery.rows[0];
+          opponentId = challenge.challenger === numericUserId 
+            ? challenge.opponent 
+            : challenge.challenger;
+        }
+      } catch (err) {
+        console.warn('⚠️ [DEPOSIT] Could not fetch opponent info:', err.message);
+      }
 
       console.log("🔢 [DEPOSIT] Converted values:", {
         numericUserId,
@@ -123,13 +172,14 @@ class PaymentService {
         transaction_type: "deposit",
         status: "pending",
         request_id: requestId,
+        opponent_id: opponentId,
       };
 
       console.log(`💾 [DEPOSIT] Payment data to insert:`, paymentData);
 
       const query = `INSERT INTO payments 
-        (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`;
+        (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, opponent_id) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`;
 
       const result = await pool.query(query, [
         paymentData.user_id,
@@ -139,63 +189,54 @@ class PaymentService {
         paymentData.transaction_type,
         paymentData.status,
         paymentData.request_id,
+        paymentData.opponent_id,
       ]);
 
-      // CRITICAL NEW PART: Make the actual API call
-      const accessToken = await tokenManager.getToken();
+      // CRITICAL NEW PART: Make the actual API call via serialized queue with fresh auth
+      const apiData = await this.enqueueRequest("deposit", async (accessToken) => {
+        const url = `https://${HOST}/api/v1/transaction/deposit`;
+        console.log(`🔗 Deposit URL: ${url}`);
 
-      if (!accessToken) {
-        console.error(
-          "❌ [DEPOSIT] Failed to get access token for payment API"
-        );
-        return { success: false, error: "Authentication failed" };
-      }
-
-      console.log(
-        `🔑 [DEPOSIT] Got access token, making API call to initiate deposit`
-      );
-
-      const url = `https://${HOST}/api/v1/transaction/deposit`;
-      console.log(`🔗 Deposit URL: ${url}`);
-
-      // Make the actual API call to payment provider - EXACTLY as in deposit.js
-      const apiResponse = await axios.post(
-        url,
-        {
-          originatorRequestId: requestId,
-          destinationAccount: DEFAULT_DESTINATION_ACCOUNT,
-          sourceAccount: normalizedPhone,
-          amount: Math.round(numericAmount),
-          channel: CHANNEL,
-          product: PRODUCT,
-          event: "",
-          narration: `Get a cheque, mate ${numericChallengeId}`,
-          callbackUrl:
-            process.env.ONIT_CALLBACK_URL ||
-            "https://chequemate-backend-n13g.onrender.com/api/payments/callback",
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
+        const apiResponse = await axios.post(
+          url,
+          {
+            originatorRequestId: requestId,
+            destinationAccount: DEFAULT_DESTINATION_ACCOUNT,
+            sourceAccount: normalizedPhone,
+            amount: Math.round(numericAmount),
+            channel: CHANNEL,
+            product: PRODUCT,
+            event: "",
+            narration: `Get a cheque, mate ${numericChallengeId}`,
+            callbackUrl:
+              process.env.ONIT_CALLBACK_URL ||
+              "https://chequemate-backend-n13g.onrender.com/api/payments/callback",
           },
-        }
-      );
-
-      console.log(`✅ [DEPOSIT] API Response:`, apiResponse.data);
-
-      // Update payment record with transaction ID if provided by API
-      if (apiResponse.data && apiResponse.data.transactionId) {
-        await pool.query(
-          `UPDATE payments SET transaction_id = $1 WHERE request_id = $2`,
-          [apiResponse.data.transactionId, requestId]
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
         );
-      }
+
+        console.log(`✅ [DEPOSIT] API Response:`, apiResponse.data);
+
+        // Update payment record with transaction ID if provided by API
+        if (apiResponse.data && apiResponse.data.transactionId) {
+          await pool.query(
+            `UPDATE payments SET transaction_id = $1 WHERE request_id = $2`,
+            [apiResponse.data.transactionId, requestId]
+          );
+        }
+
+        return apiResponse.data;
+      });
 
       return {
         success: true,
         data: result.rows[0],
-        apiResponse: apiResponse.data,
+        apiResponse: apiData,
       };
     } catch (error) {
       console.error(
@@ -240,6 +281,23 @@ class PaymentService {
       const numericUserId = parseInt(userId);
       const numericChallengeId = parseInt(challengeId);
       const numericAmount = Number(amount);
+      
+      // Get opponent information from challenge
+      let opponentId = null;
+      try {
+        const challengeQuery = await pool.query(
+          'SELECT challenger, opponent FROM challenges WHERE id = $1',
+          [numericChallengeId]
+        );
+        if (challengeQuery.rows.length > 0) {
+          const challenge = challengeQuery.rows[0];
+          opponentId = challenge.challenger === numericUserId 
+            ? challenge.opponent 
+            : challenge.challenger;
+        }
+      } catch (err) {
+        console.warn('⚠️ [WITHDRAW] Could not fetch opponent info:', err.message);
+      }
 
       if (isNaN(numericUserId)) {
         throw new Error(`Invalid userId: ${userId}`);
@@ -276,14 +334,15 @@ class PaymentService {
           transaction_type: isRefund ? "refund" : "balance_credit", // GREEN: money going INTO wallet
           status: "completed",
           request_id: requestId,
+          opponent_id: opponentId,
           notes: isRefund
             ? `Refund credited to balance (below ${MINIMUM_PAYOUT} KSH minimum)`
             : `Winnings credited to balance (below ${MINIMUM_PAYOUT} KSH minimum)`,
         };
 
         const query = `INSERT INTO payments 
-          (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes) 
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`;
+          (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes, opponent_id) 
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`;
 
         const result = await pool.query(query, [
           paymentData.user_id,
@@ -294,6 +353,7 @@ class PaymentService {
           paymentData.status,
           paymentData.request_id,
           paymentData.notes,
+          paymentData.opponent_id,
         ]);
 
         // Actually credit the user's balance
@@ -328,14 +388,15 @@ class PaymentService {
         transaction_type: isRefund ? "refund" : "payout",
         status: "pending",
         request_id: requestId,
+        opponent_id: opponentId,
         notes: isRefund
           ? `Refund - withdrawn to M-PESA (${numericAmount} KSH)`
           : `Winnings - withdrawn to M-PESA (${numericAmount} KSH)`,
       };
 
       const query = `INSERT INTO payments 
-        (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`;
+        (user_id, challenge_id, phone_number, amount, transaction_type, status, request_id, notes, opponent_id) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`;
 
       const result = await pool.query(query, [
         paymentData.user_id,
@@ -346,61 +407,56 @@ class PaymentService {
         paymentData.status,
         paymentData.request_id,
         paymentData.notes,
+        paymentData.opponent_id,
       ]);
 
-      // Get access token
-      const accessToken = await tokenManager.getToken();
+      // Make the actual API call via serialized queue with fresh auth
+      const apiData = await this.enqueueRequest("withdraw", async (accessToken) => {
+        const url = `https://${HOST}/api/v1/transaction/withdraw`;
+        console.log(`🔗 Withdraw URL: ${url}`);
 
-      if (!accessToken) {
-        console.error(
-          "❌ [WITHDRAW] Failed to get access token for payment API"
-        );
-        return { success: false, error: "Authentication failed" };
-      }
-
-      const url = `https://${HOST}/api/v1/transaction/withdraw`;
-      console.log(`🔗 Withdraw URL: ${url}`);
-
-      // Make the actual API call - EXACTLY as in withdraw.js
-      const apiResponse = await axios.post(
-        url,
-        {
-          originatorRequestId: requestId,
-          sourceAccount: DEFAULT_DESTINATION_ACCOUNT,
-          destinationAccount: normalizedPhone,
-          amount: Math.round(Number(amount)), // Convert to integer as specified
-          channel: CHANNEL,
-          channelType: "MOBILE",
-          product: "CA04",
-          narration: `Chess Nexus ${
-            isRefund ? "refund" : "winnings"
-          } - Game ${challengeId}`,
-          callbackUrl:
-            process.env.ONIT_CALLBACK_URL ||
-            "https://chequemate-backend-n13g.onrender.com/api/payments/callback",
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
+        const apiResponse = await axios.post(
+          url,
+          {
+            originatorRequestId: requestId,
+            sourceAccount: DEFAULT_DESTINATION_ACCOUNT,
+            destinationAccount: normalizedPhone,
+            amount: Math.round(Number(amount)), // Convert to integer as specified
+            channel: CHANNEL,
+            channelType: "MOBILE",
+            product: "CA04",
+            narration: `Chess Nexus ${
+              isRefund ? "refund" : "winnings"
+            } - Game ${challengeId}`,
+            callbackUrl:
+              process.env.ONIT_CALLBACK_URL ||
+              "https://chequemate-backend-n13g.onrender.com/api/payments/callback",
           },
-        }
-      );
-
-      console.log(`✅ [WITHDRAW] API Response:`, apiResponse.data);
-
-      // Update payment record with transaction ID
-      if (apiResponse.data && apiResponse.data.transactionId) {
-        await pool.query(
-          `UPDATE payments SET transaction_id = $1 WHERE request_id = $2`,
-          [apiResponse.data.transactionId, requestId]
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
         );
-      }
+
+        console.log(`✅ [WITHDRAW] API Response:`, apiResponse.data);
+
+        // Update payment record with transaction ID
+        if (apiResponse.data && apiResponse.data.transactionId) {
+          await pool.query(
+            `UPDATE payments SET transaction_id = $1 WHERE request_id = $2`,
+            [apiResponse.data.transactionId, requestId]
+          );
+        }
+
+        return apiResponse.data;
+      });
 
       return {
         success: true,
         data: result.rows[0],
-        apiResponse: apiResponse.data,
+        apiResponse: apiData,
       };
     } catch (error) {
       console.error(

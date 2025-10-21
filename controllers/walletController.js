@@ -14,13 +14,25 @@ export const getWallet = asyncHandler(async (req, res) => {
       [userId]
     );
 
-    // Get recent transactions from payments table (last 20)
+    // Get recent transactions from payments table (last 20) with opponent details
     const transactionsResult = await pool.query(
       `
-      SELECT id, transaction_type, amount, status, notes, created_at, request_id
-      FROM payments 
-      WHERE user_id = $1 
-      ORDER BY created_at DESC 
+      SELECT 
+        p.id, 
+        p.transaction_type, 
+        p.amount, 
+        p.status, 
+        p.notes, 
+        p.created_at, 
+        p.request_id,
+        p.challenge_id,
+        p.opponent_id,
+        u.username as opponent_username,
+        u.name as opponent_name
+      FROM payments p
+      LEFT JOIN users u ON p.opponent_id = u.id
+      WHERE p.user_id = $1 
+      ORDER BY p.created_at DESC 
       LIMIT 20
     `,
       [userId]
@@ -85,7 +97,7 @@ export const getWallet = asyncHandler(async (req, res) => {
     };
 
     // Helper function to generate user-friendly description
-    const getTransactionDescription = (transactionType, notes, amount) => {
+    const getTransactionDescription = (transactionType, notes, amount, opponentName) => {
       // Use notes if available
       if (notes && notes.trim()) {
         return notes;
@@ -93,23 +105,26 @@ export const getWallet = asyncHandler(async (req, res) => {
 
       // Generate friendly descriptions based on transaction type
       const amountStr = `${parseFloat(amount).toFixed(2)} KSH`;
+      const opponentStr = opponentName ? ` vs ${opponentName}` : '';
 
       switch (transactionType.toLowerCase()) {
         case "deposit":
-          return `Deposit - ${amountStr}`;
+          return `Deposit${opponentStr} - ${amountStr}`;
         case "refund":
-          return `Refund - withdrawn to M-PESA (${amountStr})`;
+          return `Refund${opponentStr} - withdrawn to M-PESA (${amountStr})`;
         case "payout":
-          return `Winnings - withdrawn to M-PESA (${amountStr})`;
+          return `Winnings${opponentStr} - withdrawn to M-PESA (${amountStr})`;
         case "balance_credit":
-          return `Winnings credited to balance (${amountStr})`;
+          return `Winnings${opponentStr} credited to balance (${amountStr})`;
+        case "wallet_credit":
+          return `Refund${opponentStr} credited to wallet (${amountStr})`;
         case "withdrawal":
           return `Withdrawal to M-PESA (${amountStr})`;
         case "bet":
         case "stake":
-          return `Bet placed - ${amountStr}`;
+          return `Bet placed${opponentStr} - ${amountStr}`;
         case "win":
-          return `Match winnings - ${amountStr}`;
+          return `Match winnings${opponentStr} - ${amountStr}`;
         case "reward":
         case "bonus":
           return `Bonus credited - ${amountStr}`;
@@ -130,11 +145,18 @@ export const getWallet = asyncHandler(async (req, res) => {
         description: getTransactionDescription(
           t.transaction_type,
           t.notes,
-          t.amount
+          t.amount,
+          t.opponent_name || t.opponent_username
         ),
         referenceId: t.request_id,
         status: t.status,
         date: t.created_at,
+        challengeId: t.challenge_id,
+        opponent: t.opponent_id ? {
+          id: t.opponent_id,
+          username: t.opponent_username,
+          name: t.opponent_name
+        } : null,
       })),
     });
   } catch (error) {

@@ -25,6 +25,7 @@ import statsRoutes from "./routes/statsRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import monitoringRoutes from "./routes/monitoringRoutes.js";
 import queueMonitorRoutes from "./routes/queueMonitorRoutes.js";
+import aggregateRoutes from "./routes/aggregateRoutes.js";
 import { apiTimeout } from "./middleware/timeout.js";
 
 dotenv.config();
@@ -794,6 +795,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/challenges", challengeRoutes);
 app.use("/api/games", gameRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/users", aggregateRoutes); // Aggregated data endpoints
 app.use("/api/matchmaking", matchmakingRoutes);
 app.use("/api/match-results", matchResultRoutes);
 app.use("/api/payments", paymentRoutes);

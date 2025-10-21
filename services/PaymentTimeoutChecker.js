@@ -135,12 +135,18 @@ class PaymentTimeoutChecker {
 
   async handlePartialPaymentTimeout(challenge, payment) {
     try {
+      // Determine opponent
+      const opponentId = challenge.challenger === payment.user_id 
+        ? challenge.opponent 
+        : challenge.challenger;
+      
       // Refund the user who paid
       await this.processRefund(
         payment.user_id,
         payment.amount,
         challenge.id,
-        "partial_payment_timeout"
+        "partial_payment_timeout",
+        opponentId
       );
 
       // Cancel the challenge
@@ -239,7 +245,7 @@ class PaymentTimeoutChecker {
     }
   }
 
-  async processRefund(userId, amount, challengeId, reason) {
+  async processRefund(userId, amount, challengeId, reason, opponentId = null) {
     try {
       const numericAmount = parseFloat(amount);
 
@@ -253,13 +259,13 @@ class PaymentTimeoutChecker {
         console.log(
           `📱 [REFUND] Amount >= ${this.minWithdrawalAmount} KES - initiating M-Pesa withdrawal`
         );
-        await this.initiateWithdrawal(userId, numericAmount, challengeId, reason);
+        await this.initiateWithdrawal(userId, numericAmount, challengeId, reason, opponentId);
       } else {
         // Add to wallet for amounts < 10 KES
         console.log(
           `💼 [REFUND] Amount < ${this.minWithdrawalAmount} KES - adding to wallet`
         );
-        await this.addToWallet(userId, numericAmount, challengeId, reason);
+        await this.addToWallet(userId, numericAmount, challengeId, reason, opponentId);
       }
     } catch (error) {
       console.error(`❌ [REFUND] Error processing refund:`, error);
@@ -267,7 +273,7 @@ class PaymentTimeoutChecker {
     }
   }
 
-  async initiateWithdrawal(userId, amount, challengeId, reason) {
+  async initiateWithdrawal(userId, amount, challengeId, reason, opponentId = null) {
     try {
       // Get user's phone number
       const userQuery = await pool.query("SELECT phone FROM users WHERE id = $1", [
@@ -285,7 +291,7 @@ class PaymentTimeoutChecker {
         console.warn(
           `⚠️ [REFUND] No phone number for user ${userId}, adding to wallet instead`
         );
-        await this.addToWallet(userId, amount, challengeId, reason);
+        await this.addToWallet(userId, amount, challengeId, reason, opponentId);
         return;
       }
 
@@ -295,8 +301,8 @@ class PaymentTimeoutChecker {
       const insertQuery = `
         INSERT INTO payments (
           user_id, challenge_id, phone_number, amount, 
-          transaction_type, request_id, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          transaction_type, request_id, status, opponent_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
       `;
 
@@ -308,6 +314,7 @@ class PaymentTimeoutChecker {
         "withdrawal",
         requestId,
         "pending",
+        opponentId,
       ]);
 
       // Initiate M-Pesa withdrawal via payment service
@@ -334,12 +341,19 @@ class PaymentTimeoutChecker {
       console.error(`❌ [REFUND] Withdrawal failed:`, error);
       // Fallback to wallet
       console.log(`🔄 [REFUND] Falling back to wallet credit`);
-      await this.addToWallet(userId, amount, challengeId, reason);
+      await this.addToWallet(userId, amount, challengeId, reason, opponentId);
     }
   }
 
-  async addToWallet(userId, amount, challengeId, reason) {
+  async addToWallet(userId, amount, challengeId, reason, opponentId = null) {
     try {
+      // Get user's phone number
+      const userQuery = await pool.query("SELECT phone FROM users WHERE id = $1", [
+        userId,
+      ]);
+      
+      const phoneNumber = userQuery.rows[0]?.phone || null;
+
       // Update user's wallet balance
       const updateQuery = `
         UPDATE users 
@@ -354,17 +368,19 @@ class PaymentTimeoutChecker {
       // Record the wallet transaction
       const transactionQuery = `
         INSERT INTO payments (
-          user_id, challenge_id, amount, 
-          transaction_type, status
-        ) VALUES ($1, $2, $3, $4, $5)
+          user_id, challenge_id, phone_number, amount, 
+          transaction_type, status, opponent_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       `;
 
       await pool.query(transactionQuery, [
         userId,
         challengeId,
+        phoneNumber,
         amount,
         "wallet_credit",
         "completed",
+        opponentId,
       ]);
 
       // Notify user
