@@ -11,5 +11,5 @@ ALTER TABLE users ADD COLUMN last_rating_update TIMESTAMP WITH TIME ZONE;
 UPDATE users SET current_rating = 1200 WHERE current_rating IS NULL;
 
 -- Create index for better performance on rating queries
-CREATE INDEX IF NOT EXISTS idx_users_current_rating ON users(current_rating);
-CREATE INDEX IF NOT EXISTS idx_users_last_rating_update ON users(last_rating_update);
+CREATE INDEX idx_users_current_rating ON users(current_rating);
+CREATE INDEX idx_users_last_rating_update ON users(last_rating_update);
