@@ -158,28 +158,62 @@ const getWalletData = async (userId) => {
     );
 
     // Get recent transactions (last 20)
-    const transactionsResult = await pool.query(
-      `
-      SELECT 
-        p.id, 
-        p.transaction_type, 
-        p.amount, 
-        p.status, 
-        p.notes, 
-        p.created_at, 
-        p.request_id,
-        p.challenge_id,
-        p.opponent_id,
-        u.username as opponent_username,
-        u.name as opponent_name
-      FROM payments p
-      LEFT JOIN users u ON p.opponent_id = u.id
-      WHERE p.user_id = $1 
-      ORDER BY p.created_at DESC 
-      LIMIT 20
-    `,
-      [userId]
-    );
+    let transactionsResult;
+    try {
+      transactionsResult = await pool.query(
+        `
+        SELECT 
+          p.id, 
+          p.transaction_type, 
+          p.amount, 
+          p.status, 
+          p.notes, 
+          p.created_at, 
+          p.request_id,
+          p.challenge_id,
+          p.opponent_id,
+          u.username as opponent_username,
+          u.name as opponent_name
+        FROM payments p
+        LEFT JOIN users u ON p.opponent_id = u.id
+        WHERE p.user_id = $1 
+        ORDER BY p.created_at DESC 
+        LIMIT 20
+      `,
+        [userId]
+      );
+    } catch (error) {
+      // If notes or opponent_id columns don't exist, retry without them
+      if (error.code === '42703' && (error.message.includes('notes') || error.message.includes('opponent_id'))) {
+        console.log("⚠️ [AGGREGATE] notes/opponent_id columns missing, retrying without them");
+        transactionsResult = await pool.query(
+          `
+          SELECT 
+            p.id, 
+            p.transaction_type, 
+            p.amount, 
+            p.status, 
+            p.created_at, 
+            p.request_id,
+            p.challenge_id
+          FROM payments p
+          WHERE p.user_id = $1 
+          ORDER BY p.created_at DESC 
+          LIMIT 20
+        `,
+          [userId]
+        );
+        // Add default values for missing columns
+        transactionsResult.rows.forEach(row => {
+          row.notes = null;
+          row.opponent_id = null;
+          row.opponent_username = null;
+          row.opponent_name = null;
+        });
+      } else {
+        throw error;
+      }
+    }
 
     const balance = balanceResult.rows[0]?.balance || 0.0;
     const transactions = transactionsResult.rows;
