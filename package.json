@@ -5,7 +5,7 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node render-init.js && node app.js",
+    "start": "node init-render-db.js && node app.js",
     "start:local": "node app.js",
     "dev": "nodemon app.js",
     "db:init": "node -r dotenv/config ./db/init.js",

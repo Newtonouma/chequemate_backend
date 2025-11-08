@@ -82,17 +82,4 @@ async function initializeRenderDatabase() {
   }
 }
 
-// Only run if called directly (not imported)
-if (import.meta.url === `file://${__filename}`) {
-  initializeRenderDatabase()
-    .then(() => {
-      console.log('✅ [RENDER] Render database setup completed');
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error('💥 [RENDER] Render database setup failed:', error.message);
-      process.exit(1);
-    });
-}
-
 export default initializeRenderDatabase;
