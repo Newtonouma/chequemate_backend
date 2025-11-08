@@ -304,7 +304,8 @@ class PaymentController {
       );
 
       // Update payment status in database
-      const updateQuery = `
+      // Try with transaction_id first, fallback without if column doesn't exist
+      let updateQuery = `
         UPDATE payments 
         SET 
           status = $1,
@@ -321,12 +322,38 @@ class PaymentController {
         requestId: originatorRequestId
       });
 
-      const result = await pool.query(updateQuery, [
-        mappedStatus,
-        transactionReference || transactionId, // Use transactionReference if available
-        JSON.stringify(req.body),
-        originatorRequestId,
-      ]);
+      let result;
+      try {
+        // Try with transaction_id column first
+        result = await pool.query(updateQuery, [
+          mappedStatus,
+          transactionReference || transactionId, // Use transactionReference if available
+          JSON.stringify(req.body),
+          originatorRequestId,
+        ]);
+      } catch (error) {
+        // If transaction_id column doesn't exist, retry without it
+        if (error.code === '42703' && error.message.includes('transaction_id')) {
+          console.log("⚠️ [CALLBACK] transaction_id column missing, retrying without it");
+          updateQuery = `
+            UPDATE payments 
+            SET 
+              status = $1,
+              callback_data = $2,
+              updated_at = NOW()
+            WHERE request_id = $3
+            RETURNING *;
+          `;
+          
+          result = await pool.query(updateQuery, [
+            mappedStatus,
+            JSON.stringify(req.body),
+            originatorRequestId,
+          ]);
+        } else {
+          throw error;
+        }
+      }
 
       console.log("💾 [CALLBACK] Database update result:", {
         rowsAffected: result.rows.length,
