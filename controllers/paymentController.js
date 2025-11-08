@@ -216,7 +216,15 @@ class PaymentController {
   // Handle webhook callbacks from payment provider
   async handleCallback(req, res) {
     try {
-      console.log("💳 [CALLBACK] Payment callback received:", req.body);
+      // Enhanced logging for production debugging
+      console.log("💳 [CALLBACK] Payment callback received at:", new Date().toISOString());
+      console.log("💳 [CALLBACK] Request headers:", {
+        'user-agent': req.get('user-agent'),
+        'content-type': req.get('content-type'),
+        'x-forwarded-for': req.get('x-forwarded-for'),
+        'origin': req.get('origin')
+      });
+      console.log("💳 [CALLBACK] Full request body:", JSON.stringify(req.body, null, 2));
 
       // Extract request ID using helper function
       const originatorRequestId = this.extractRequestId(req.body);
@@ -224,6 +232,14 @@ class PaymentController {
       const transactionReference = req.body.transactionReference;
       const transactionId = req.body.transactionId;
       const timestamp = req.body.timestamp;
+
+      console.log("💳 [CALLBACK] Extracted data:", {
+        originatorRequestId,
+        onitStatus,
+        transactionReference,
+        transactionId,
+        timestamp
+      });
 
       if (!originatorRequestId) {
         console.error(
@@ -245,13 +261,23 @@ class PaymentController {
         mappedStatus = "completed";
         console.log(`✅ [CALLBACK] Transaction reference found: ${transactionReference} → marking as completed`);
       } else if (onitStatus) {
-        // Fallback to status field if present
+        // Enhanced status mapping for ONIT status codes and messages
         const statusLower = onitStatus.toLowerCase();
-        if (statusLower.includes("success") || statusLower.includes("complete")) {
+        const message = req.body.message || req.body.description || "";
+        const messageLower = message.toLowerCase();
+        
+        // Check for explicit failure status codes
+        if (onitStatus === "5008" || onitStatus === "5000" || onitStatus === "5001") {
+          mappedStatus = "failed";
+        } else if (statusLower.includes("success") || statusLower.includes("complete")) {
           mappedStatus = "completed";
         } else if (
           statusLower.includes("fail") ||
-          statusLower.includes("error")
+          statusLower.includes("error") ||
+          messageLower.includes("cancelled") ||
+          messageLower.includes("failed") ||
+          messageLower.includes("error") ||
+          messageLower.includes("insufficient")
         ) {
           mappedStatus = "failed";
         } else if (
@@ -259,6 +285,17 @@ class PaymentController {
           statusLower.includes("processing")
         ) {
           mappedStatus = "processing";
+        }
+      } else {
+        // If no status but we have error indicators in message
+        const message = req.body.message || req.body.description || "";
+        const messageLower = message.toLowerCase();
+        
+        if (messageLower.includes("cancelled") || 
+            messageLower.includes("failed") ||
+            messageLower.includes("error") ||
+            messageLower.includes("insufficient")) {
+          mappedStatus = "failed";
         }
       }
 
@@ -278,12 +315,29 @@ class PaymentController {
         RETURNING *;
       `;
 
+      console.log("💾 [CALLBACK] About to update payment with:", {
+        status: mappedStatus,
+        transactionId: transactionReference || transactionId,
+        requestId: originatorRequestId
+      });
+
       const result = await pool.query(updateQuery, [
         mappedStatus,
         transactionReference || transactionId, // Use transactionReference if available
         JSON.stringify(req.body),
         originatorRequestId,
       ]);
+
+      console.log("💾 [CALLBACK] Database update result:", {
+        rowsAffected: result.rows.length,
+        payment: result.rows[0] ? {
+          id: result.rows[0].id,
+          user_id: result.rows[0].user_id,
+          challenge_id: result.rows[0].challenge_id,
+          status: result.rows[0].status,
+          transaction_type: result.rows[0].transaction_type
+        } : null
+      });
 
       if (result.rows.length === 0) {
         console.warn(
@@ -299,7 +353,7 @@ class PaymentController {
 
       const payment = result.rows[0];
       console.log(
-        `✅ [CALLBACK] Updated payment ${payment.id}: ${payment.transaction_type} → ${mappedStatus}`
+        `✅ [CALLBACK] Updated payment ${payment.id}: ${payment.transaction_type} → ${mappedStatus} for user ${payment.user_id}`
       );
 
       // If this is a deposit callback and failed, notify the user
@@ -312,6 +366,7 @@ class PaymentController {
           `💔 [CALLBACK] Emitting payment-failed to user ${payment.user_id}`
         );
         if (io) {
+          console.log(`📡 [CALLBACK] Socket IO available, emitting to room: ${payment.user_id.toString()}`);
           io.to(payment.user_id.toString()).emit("payment-failed", {
             userId: payment.user_id,
             challengeId: payment.challenge_id,
@@ -322,6 +377,9 @@ class PaymentController {
               "Payment failed. Please try again.",
             timestamp: new Date().toISOString(),
           });
+          console.log(`✅ [CALLBACK] payment-failed event emitted to user ${payment.user_id}`);
+        } else {
+          console.error(`❌ [CALLBACK] Socket IO not available! Cannot emit payment-failed to user ${payment.user_id}`);
         }
       }
 
@@ -335,6 +393,7 @@ class PaymentController {
           `🎉 [CALLBACK] Payment successful for user ${payment.user_id}, emitting payment-success`
         );
         if (io) {
+          console.log(`📡 [CALLBACK] Socket IO available, emitting to room: ${payment.user_id.toString()}`);
           io.to(payment.user_id.toString()).emit("payment-success", {
             userId: payment.user_id,
             challengeId: payment.challenge_id,
@@ -342,6 +401,9 @@ class PaymentController {
             message: "Payment successful!",
             timestamp: new Date().toISOString(),
           });
+          console.log(`✅ [CALLBACK] payment-success event emitted to user ${payment.user_id}`);
+        } else {
+          console.error(`❌ [CALLBACK] Socket IO not available! Cannot emit payment-success to user ${payment.user_id}`);
         }
       }
 

@@ -27,6 +27,7 @@ import walletRoutes from "./routes/walletRoutes.js";
 import monitoringRoutes from "./routes/monitoringRoutes.js";
 import queueMonitorRoutes from "./routes/queueMonitorRoutes.js";
 import aggregateRoutes from "./routes/aggregateRoutes.js";
+import debugRoutes from "./routes/debugRoutes.js";
 import { apiTimeout } from "./middleware/timeout.js";
 
 dotenv.config();
@@ -882,6 +883,7 @@ app.use("/api/stats", statsRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/monitoring", monitoringRoutes);
 app.use("/api/queue", queueMonitorRoutes); // Queue monitoring
+app.use("/api/debug", debugRoutes); // Debug endpoints for payment troubleshooting
 
 // Database migration status endpoint
 app.get("/api/migrations/status", async (req, res) => {

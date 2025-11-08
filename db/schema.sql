@@ -53,6 +53,7 @@ create table if not exists payments (
    game_id                integer,
    payout_reason          varchar(255),
    transaction_reference  varchar(255),
+   transaction_id         varchar(255),
    callback_data          jsonb,
    opponent_id            integer
       references users ( id )

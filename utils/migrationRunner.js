@@ -18,6 +18,7 @@ class MigrationRunner {
       "add_performance_indexes_migration.sql", 
       "add_updated_at_column_migration.sql",
       "add_transaction_types_migration.sql",
+      "add_transaction_id_column.sql", // Fix missing transaction_id column
     ];
   }
 
