@@ -5,9 +5,11 @@
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.js",
+    "start": "node render-init.js && node app.js",
+    "start:local": "node app.js",
     "dev": "nodemon app.js",
     "db:init": "node -r dotenv/config ./db/init.js",
+    "render:deploy": "node render-init.js",
     "build": "echo \"Build completed - no build step required for this backend\""
   },
   "keywords": [],

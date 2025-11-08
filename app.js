@@ -12,6 +12,7 @@ import paymentService from "./services/paymentService.js";
 import PaymentTimeoutChecker from "./services/PaymentTimeoutChecker.js";
 import monitoringService from "./services/monitoringService.js";
 import migrationRunner from "./utils/migrationRunner.js";
+import renderInit from "./render-init.js";
 
 import authRoutes from "./routes/auth.js";
 import challengeRoutes from "./routes/challengeRoutes.js";
@@ -931,6 +932,11 @@ const PORT = process.env.PORT || 3002;
 // Run database migrations before starting server
 (async () => {
   try {
+    // Initialize database schema for Render (ensures base tables exist)
+    console.log("🔄 [STARTUP] Initializing database schema...");
+    await renderInit();
+    console.log("✅ [STARTUP] Database schema initialized");
+
     console.log("🔄 [STARTUP] Running database migrations...");
     await migrationRunner.runAll();
     console.log("✅ [STARTUP] Migrations completed successfully");

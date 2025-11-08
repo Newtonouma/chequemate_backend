@@ -12,8 +12,10 @@ class MigrationRunner {
   constructor() {
     this.migrationsDir = path.join(__dirname, "../db");
     this.migrations = [
+      "schema.sql", // Base schema MUST run first
+      "createTables.sql", // Additional tables
       "add_balance_column_migration.sql",
-      "add_performance_indexes_migration.sql",
+      "add_performance_indexes_migration.sql", 
       "add_updated_at_column_migration.sql",
       "add_transaction_types_migration.sql",
     ];
