@@ -288,10 +288,10 @@ router.get('/database/table-structure', async (req, res) => {
   }
 });
 
-// Manual column addition endpoint (for production hotfixes)
+// Manual column addition endpoint (for production hotfixes) - Updated 2025-11-09
 router.post('/database/add-missing-columns', async (req, res) => {
   try {
-    console.log('🔧 [DEBUG] Manual column addition requested');
+    console.log('🔧 [DEBUG] Manual column addition requested - including balance column');
     
     const results = {
       notes_column: { attempted: false, success: false, error: null },
