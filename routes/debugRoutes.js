@@ -296,7 +296,8 @@ router.post('/database/add-missing-columns', async (req, res) => {
     const results = {
       notes_column: { attempted: false, success: false, error: null },
       transaction_id_column: { attempted: false, success: false, error: null },
-      match_result_column: { attempted: false, success: false, error: null }
+      match_result_column: { attempted: false, success: false, error: null },
+      balance_column: { attempted: false, success: false, error: null }
     };
 
     // Try to add notes column to payments table
@@ -344,6 +345,22 @@ router.post('/database/add-missing-columns', async (req, res) => {
         console.log('ℹ️ [DEBUG] Match_result column already exists in ongoing_matches table');
       } else {
         console.error('❌ [DEBUG] Error adding match_result column:', error.message);
+      }
+    }
+
+    // Try to add balance column to users table
+    try {
+      results.balance_column.attempted = true;
+      await pool.query('ALTER TABLE users ADD COLUMN balance DECIMAL(10, 2) DEFAULT 0.00');
+      results.balance_column.success = true;
+      console.log('✅ [DEBUG] Successfully added balance column to users table');
+    } catch (error) {
+      results.balance_column.error = error.message;
+      if (error.code === '42701') {
+        results.balance_column.success = true; // Column already exists
+        console.log('ℹ️ [DEBUG] Balance column already exists in users table');
+      } else {
+        console.error('❌ [DEBUG] Error adding balance column:', error.message);
       }
     }
 
