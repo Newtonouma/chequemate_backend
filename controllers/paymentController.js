@@ -5,6 +5,36 @@ import pool from "../config/database.js";
 let io = null;
 
 class PaymentController {
+  // Helper function to generate user-friendly messages for payment failures
+  static generateFriendlyMessage(status, message, description) {
+    // Check for specific error patterns and provide friendly messages
+    const rawMessage = message || description || "";
+    const lowerMessage = rawMessage.toLowerCase();
+
+    if (status === "5008" || lowerMessage.includes("cancelled by user")) {
+      return "Payment was cancelled. No worries, you can try again when you're ready!";
+    }
+    
+    if (lowerMessage.includes("insufficient")) {
+      return "Insufficient funds in your account. Please check your balance and try again.";
+    }
+    
+    if (lowerMessage.includes("timeout") || lowerMessage.includes("expired")) {
+      return "Payment request timed out. Please try again.";
+    }
+    
+    if (lowerMessage.includes("invalid") || lowerMessage.includes("error")) {
+      return "There was an issue processing your payment. Please try again or contact support.";
+    }
+    
+    if (lowerMessage.includes("network") || lowerMessage.includes("connection")) {
+      return "Network connection issue. Please check your internet and try again.";
+    }
+
+    // Default friendly message for any other failures
+    return "Payment could not be completed at this time. Please try again in a few minutes.";
+  }
+
   // Set the Socket.IO instance (called from app.js after io is initialized)
   static setSocketIO(socketIO) {
     io = socketIO;
@@ -394,17 +424,23 @@ class PaymentController {
         );
         if (io) {
           console.log(`📡 [CALLBACK] Socket IO available, emitting to room: ${payment.user_id.toString()}`);
+          
+          // Generate friendly message for the user
+          const friendlyMessage = PaymentController.generateFriendlyMessage(
+            onitStatus, 
+            req.body.message, 
+            req.body.description
+          );
+          
           io.to(payment.user_id.toString()).emit("payment-failed", {
             userId: payment.user_id,
             challengeId: payment.challenge_id,
             amount: payment.amount,
-            message:
-              req.body.message ||
-              req.body.description ||
-              "Payment failed. Please try again.",
+            message: friendlyMessage,
+            rawMessage: req.body.message || req.body.description, // Keep original for debugging
             timestamp: new Date().toISOString(),
           });
-          console.log(`✅ [CALLBACK] payment-failed event emitted to user ${payment.user_id}`);
+          console.log(`✅ [CALLBACK] payment-failed event emitted to user ${payment.user_id} with message: "${friendlyMessage}"`);
         } else {
           console.error(`❌ [CALLBACK] Socket IO not available! Cannot emit payment-failed to user ${payment.user_id}`);
         }
