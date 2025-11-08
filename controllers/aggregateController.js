@@ -295,12 +295,33 @@ export const getCurrentUserAllData = asyncHandler(async (req, res) => {
 
   try {
     // Get user profile from database
-    const userResult = await pool.query(
-      `SELECT id, username, email, name, phone, chess_com_username, lichess_username, 
-              preferred_platform, current_rating, balance, created_at 
-       FROM users WHERE id = $1`,
-      [userId]
-    );
+    // Try with all columns first, fallback without current_rating if it doesn't exist
+    let userResult;
+    try {
+      userResult = await pool.query(
+        `SELECT id, username, email, name, phone, chess_com_username, lichess_username, 
+                preferred_platform, current_rating, balance, created_at 
+         FROM users WHERE id = $1`,
+        [userId]
+      );
+    } catch (error) {
+      // If current_rating column doesn't exist, retry without it
+      if (error.code === '42703' && error.message.includes('current_rating')) {
+        console.log("⚠️ [AGGREGATE] current_rating column missing, retrying without it");
+        userResult = await pool.query(
+          `SELECT id, username, email, name, phone, chess_com_username, lichess_username, 
+                  preferred_platform, balance, created_at 
+           FROM users WHERE id = $1`,
+          [userId]
+        );
+        // Add default current_rating to the result
+        if (userResult.rows.length > 0) {
+          userResult.rows[0].current_rating = 1200; // Default rating
+        }
+      } else {
+        throw error;
+      }
+    }
 
     if (userResult.rows.length === 0) {
       res.status(404);

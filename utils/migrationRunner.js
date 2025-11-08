@@ -18,6 +18,8 @@ class MigrationRunner {
       "add_performance_indexes_migration.sql", 
       "add_updated_at_column_migration.sql",
       "add_transaction_types_migration.sql",
+      "add_rating_columns_migration.sql", // Add missing rating columns
+      "add_rating_columns_v2.sql", // Simple rating columns migration
       "add_transaction_id_column.sql", // Fix missing transaction_id column
       "add_transaction_id_column_v2.sql", // Hotfix for production
     ];
