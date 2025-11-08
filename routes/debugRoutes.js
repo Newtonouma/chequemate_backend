@@ -234,6 +234,60 @@ router.post('/payments/:paymentId/force-complete', async (req, res) => {
   }
 });
 
+// Database table structure diagnostic
+router.get('/database/table-structure', async (req, res) => {
+  try {
+    console.log('🔍 [DEBUG] Checking database table structure');
+    
+    // Check if payments table exists and get its structure
+    const tableQuery = `
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns 
+      WHERE table_name = 'payments'
+      ORDER BY ordinal_position;
+    `;
+    
+    const result = await pool.query(tableQuery);
+    
+    // Also check if the table exists at all
+    const tableExistsQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'payments'
+      );
+    `;
+    
+    const existsResult = await pool.query(tableExistsQuery);
+    
+    // Try a direct column check
+    const columnCheckQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.columns 
+        WHERE table_name = 'payments' 
+        AND column_name = 'transaction_id'
+      );
+    `;
+    
+    const columnExists = await pool.query(columnCheckQuery);
+    
+    res.json({
+      success: true,
+      tableExists: existsResult.rows[0].exists,
+      hasTransactionIdColumn: columnExists.rows[0].exists,
+      columns: result.rows,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [DEBUG] Error checking table structure:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Manual migration trigger (for production hotfixes)
 router.post('/migrations/run', async (req, res) => {
   try {
