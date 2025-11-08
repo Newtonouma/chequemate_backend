@@ -23,6 +23,9 @@ class MigrationRunner {
       "add_rating_columns_v3.sql", // Ultra simple rating columns migration
       "add_transaction_id_column.sql", // Fix missing transaction_id column
       "add_transaction_id_column_v2.sql", // Hotfix for production
+      "force_add_notes_column.sql", // Force add notes column (new migration)
+      "force_add_transaction_id.sql", // Force add transaction_id column (new migration)
+      "force_add_match_result.sql", // Force add match_result column (new migration)
     ];
   }
 
