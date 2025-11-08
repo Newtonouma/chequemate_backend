@@ -288,6 +288,92 @@ router.get('/database/table-structure', async (req, res) => {
   }
 });
 
+// Manual column addition endpoint (for production hotfixes)
+router.post('/database/add-missing-columns', async (req, res) => {
+  try {
+    console.log('🔧 [DEBUG] Manual column addition requested');
+    
+    const results = {
+      notes_column: { attempted: false, success: false, error: null },
+      transaction_id_column: { attempted: false, success: false, error: null },
+      match_result_column: { attempted: false, success: false, error: null }
+    };
+
+    // Try to add notes column to payments table
+    try {
+      results.notes_column.attempted = true;
+      await pool.query('ALTER TABLE payments ADD COLUMN notes TEXT');
+      results.notes_column.success = true;
+      console.log('✅ [DEBUG] Successfully added notes column to payments table');
+    } catch (error) {
+      results.notes_column.error = error.message;
+      if (error.code === '42701') {
+        results.notes_column.success = true; // Column already exists
+        console.log('ℹ️ [DEBUG] Notes column already exists in payments table');
+      } else {
+        console.error('❌ [DEBUG] Error adding notes column:', error.message);
+      }
+    }
+
+    // Try to add transaction_id column to payments table
+    try {
+      results.transaction_id_column.attempted = true;
+      await pool.query('ALTER TABLE payments ADD COLUMN transaction_id VARCHAR(255)');
+      results.transaction_id_column.success = true;
+      console.log('✅ [DEBUG] Successfully added transaction_id column to payments table');
+    } catch (error) {
+      results.transaction_id_column.error = error.message;
+      if (error.code === '42701') {
+        results.transaction_id_column.success = true; // Column already exists
+        console.log('ℹ️ [DEBUG] Transaction_id column already exists in payments table');
+      } else {
+        console.error('❌ [DEBUG] Error adding transaction_id column:', error.message);
+      }
+    }
+
+    // Try to add match_result column to ongoing_matches table
+    try {
+      results.match_result_column.attempted = true;
+      await pool.query('ALTER TABLE ongoing_matches ADD COLUMN match_result VARCHAR(50)');
+      results.match_result_column.success = true;
+      console.log('✅ [DEBUG] Successfully added match_result column to ongoing_matches table');
+    } catch (error) {
+      results.match_result_column.error = error.message;
+      if (error.code === '42701') {
+        results.match_result_column.success = true; // Column already exists
+        console.log('ℹ️ [DEBUG] Match_result column already exists in ongoing_matches table');
+      } else {
+        console.error('❌ [DEBUG] Error adding match_result column:', error.message);
+      }
+    }
+
+    // Try to add indexes
+    try {
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_payments_notes ON payments(notes)');
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_payments_transaction_id ON payments(transaction_id)');
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_ongoing_matches_match_result ON ongoing_matches(match_result)');
+      console.log('✅ [DEBUG] Successfully created/verified indexes');
+    } catch (error) {
+      console.warn('⚠️ [DEBUG] Index creation warning (non-critical):', error.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Column addition attempts completed',
+      results,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [DEBUG] Error in manual column addition:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Manual migration trigger (for production hotfixes)
 router.post('/migrations/run', async (req, res) => {
   try {
