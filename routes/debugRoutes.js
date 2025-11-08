@@ -234,4 +234,42 @@ router.post('/payments/:paymentId/force-complete', async (req, res) => {
   }
 });
 
+// Manual migration trigger (for production hotfixes)
+router.post('/migrations/run', async (req, res) => {
+  try {
+    console.log('🔄 [DEBUG] Manual migration trigger requested');
+    
+    // Import migration runner
+    const migrationRunnerModule = await import('../utils/migrationRunner.js');
+    const migrationRunner = migrationRunnerModule.default;
+    
+    // Get current status
+    const statusBefore = await migrationRunner.getStatus();
+    console.log('📊 [DEBUG] Migration status before:', statusBefore);
+    
+    // Run migrations
+    await migrationRunner.runAll();
+    
+    // Get status after
+    const statusAfter = await migrationRunner.getStatus();
+    console.log('📊 [DEBUG] Migration status after:', statusAfter);
+    
+    res.json({
+      success: true,
+      message: 'Migrations executed successfully',
+      before: statusBefore,
+      after: statusAfter,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ [DEBUG] Error running migrations:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 export default router;
