@@ -239,6 +239,22 @@ class User {
       const result = await pool.query(query, [userId, newBalance]);
       return result.rows[0];
     } catch (error) {
+      if (error.message.includes('column "balance" does not exist')) {
+        console.warn(`⚠️ [USER] Balance column missing - attempting to create it`);
+        try {
+          await pool.query(`
+            ALTER TABLE users 
+            ADD COLUMN IF NOT EXISTS balance DECIMAL(10, 2) DEFAULT 0.00
+          `);
+          // Retry the update
+          const result = await pool.query(query, [userId, newBalance]);
+          console.log(`✅ [USER] Balance column created and updated successfully`);
+          return result.rows[0];
+        } catch (retryError) {
+          console.error(`❌ [USER] Failed to create balance column:`, retryError.message);
+          throw error;
+        }
+      }
       throw error;
     }
   }

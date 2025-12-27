@@ -354,16 +354,45 @@ class PaymentTimeoutChecker {
       
       const phoneNumber = userQuery.rows[0]?.phone || null;
 
-      // Update user's wallet balance
-      const updateQuery = `
-        UPDATE users 
-        SET balance = COALESCE(balance, 0) + $1
-        WHERE id = $2
-        RETURNING balance
-      `;
+      // Update user's wallet balance with column existence check
+      let newBalance = 0;
+      try {
+        const updateQuery = `
+          UPDATE users 
+          SET balance = COALESCE(balance, 0) + $1
+          WHERE id = $2
+          RETURNING balance
+        `;
 
-      const result = await pool.query(updateQuery, [amount, userId]);
-      const newBalance = result.rows[0].balance;
+        const result = await pool.query(updateQuery, [amount, userId]);
+        newBalance = result.rows[0]?.balance || 0;
+      } catch (balanceError) {
+        if (balanceError.message.includes('column "balance" does not exist')) {
+          console.warn(`⚠️ [REFUND] Balance column missing - will create it. Error: ${balanceError.message}`);
+          // Try to add the column
+          try {
+            await pool.query(`
+              ALTER TABLE users 
+              ADD COLUMN IF NOT EXISTS balance DECIMAL(10, 2) DEFAULT 0.00
+            `);
+            // Retry the balance update
+            const updateQuery = `
+              UPDATE users 
+              SET balance = COALESCE(balance, 0) + $1
+              WHERE id = $2
+              RETURNING balance
+            `;
+            const result = await pool.query(updateQuery, [amount, userId]);
+            newBalance = result.rows[0]?.balance || 0;
+            console.log(`✅ [REFUND] Balance column created and updated successfully`);
+          } catch (retryError) {
+            console.error(`❌ [REFUND] Failed to create/update balance column:`, retryError.message);
+            throw balanceError; // Throw original error
+          }
+        } else {
+          throw balanceError; // Re-throw if not a column missing error
+        }
+      }
 
       // Record the wallet transaction
       const transactionQuery = `
