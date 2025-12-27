@@ -931,38 +931,36 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3002;
 
-// Run database migrations before starting server
+// Run database migrations before starting server (NON-BLOCKING)
 (async () => {
   try {
     console.log("🔄 [STARTUP] Running database migrations...");
-    await migrationRunner.runAll();
-    console.log("✅ [STARTUP] Migrations completed successfully");
+    
+    // Try migrations but don't block startup if they fail
+    try {
+      await migrationRunner.runAll();
+      console.log("✅ [STARTUP] Migrations completed successfully");
+    } catch (migrationError) {
+      console.warn("⚠️ [STARTUP] Migration failed (non-blocking):", migrationError.message);
+      console.warn("⚠️ [STARTUP] Application will start anyway. Please check database connection.");
+    }
 
-    // Test PostgreSQL connection
-    pool.connect((err, client, release) => {
-      if (err) {
-        console.error(
-          "❌ [STARTUP] Error acquiring PostgreSQL client:",
-          err.stack
-        );
-        process.exit(1);
-      }
-      client.query("SELECT NOW()", (err, result) => {
-        release();
-        if (err) {
-          console.error(
-            "❌ [STARTUP] Error executing PostgreSQL query:",
-            err.stack
-          );
-          process.exit(1);
-        }
-        console.log("✅ [STARTUP] PostgreSQL connected:", result.rows[0].now);
-      });
-    });
+    // Test PostgreSQL connection (NON-BLOCKING)
+    try {
+      const client = await pool.connect();
+      const result = await client.query("SELECT NOW()");
+      client.release();
+      console.log("✅ [STARTUP] PostgreSQL connected:", result.rows[0].now);
+    } catch (dbError) {
+      console.warn("⚠️ [STARTUP] Database connection test failed:", dbError.message);
+      console.warn("⚠️ [STARTUP] Application will start anyway. Please check DATABASE_URL.");
+    }
 
-    // Start server after migrations
+    // Start server regardless of migration/connection status
     server.listen(PORT, () => {
       console.log(`✅ [STARTUP] Server is running on port ${PORT}`);
+      console.log(`🌐 [STARTUP] Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🔗 [STARTUP] Database host: ${process.env.DB_HOST || 'localhost'}`);
 
       // OLD: Initialize match result checker (replaced by PerMatchResultChecker)
       // const matchChecker = new MatchResultChecker(io);
