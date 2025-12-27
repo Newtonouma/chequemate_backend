@@ -402,16 +402,51 @@ class PaymentTimeoutChecker {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `;
 
-      await pool.query(transactionQuery, [
-        userId,
-        challengeId,
-        phoneNumber,
-        amount,
-        "balance_credit", // Use balance_credit which is allowed in the CHECK constraint
-        "completed",
-        opponentId,
-        `WALLET_CREDIT_${Date.now()}_${userId}`, // Generate unique request_id for wallet credits
-      ]);
+      try {
+        await pool.query(transactionQuery, [
+          userId,
+          challengeId,
+          phoneNumber,
+          amount,
+          "balance_credit",
+          "completed",
+          opponentId,
+          `WALLET_CREDIT_${Date.now()}_${userId}`,
+        ]);
+      } catch (constraintError) {
+        if (constraintError.message.includes('payments_transaction_type_check')) {
+          console.warn(`⚠️ [REFUND] Transaction type constraint missing balance_credit - fixing...`);
+          try {
+            // Drop and recreate the constraint with all needed types
+            await pool.query(`
+              ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_transaction_type_check;
+              ALTER TABLE payments ADD CONSTRAINT payments_transaction_type_check 
+                CHECK (transaction_type IN (
+                  'deposit', 'withdrawal', 'payout', 'refund', 
+                  'balance_credit', 'bet', 'stake'
+                ));
+            `);
+            console.log(`✅ [REFUND] Transaction type constraint updated with balance_credit`);
+            
+            // Retry the insert
+            await pool.query(transactionQuery, [
+              userId,
+              challengeId,
+              phoneNumber,
+              amount,
+              "balance_credit",
+              "completed",
+              opponentId,
+              `WALLET_CREDIT_${Date.now()}_${userId}`,
+            ]);
+          } catch (retryError) {
+            console.error(`❌ [REFUND] Failed to fix transaction type constraint:`, retryError.message);
+            throw constraintError;
+          }
+        } else {
+          throw constraintError;
+        }
+      }
 
       // Notify user
       if (io) {
