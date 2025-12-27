@@ -398,8 +398,8 @@ class PaymentTimeoutChecker {
       const transactionQuery = `
         INSERT INTO payments (
           user_id, challenge_id, phone_number, amount, 
-          transaction_type, status, opponent_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          transaction_type, status, opponent_id, request_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       `;
 
       await pool.query(transactionQuery, [
@@ -410,6 +410,7 @@ class PaymentTimeoutChecker {
         "wallet_credit",
         "completed",
         opponentId,
+        `WALLET_CREDIT_${Date.now()}_${userId}`, // Generate unique request_id for wallet credits
       ]);
 
       // Notify user
