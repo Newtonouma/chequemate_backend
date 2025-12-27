@@ -407,7 +407,7 @@ class PaymentTimeoutChecker {
         challengeId,
         phoneNumber,
         amount,
-        "wallet_credit",
+        "balance_credit", // Use balance_credit which is allowed in the CHECK constraint
         "completed",
         opponentId,
         `WALLET_CREDIT_${Date.now()}_${userId}`, // Generate unique request_id for wallet credits
