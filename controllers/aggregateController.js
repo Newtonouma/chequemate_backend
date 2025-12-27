@@ -391,10 +391,33 @@ export const getCurrentUserAllData = asyncHandler(async (req, res) => {
         
         // Update rating in database if it's different
         if (currentRating !== user.current_rating) {
-          await pool.query(
-            "UPDATE users SET current_rating = $1, last_rating_update = NOW() WHERE id = $2",
-            [currentRating, userId]
-          );
+          try {
+            await pool.query(
+              "UPDATE users SET current_rating = $1, last_rating_update = NOW() WHERE id = $2",
+              [currentRating, userId]
+            );
+          } catch (ratingError) {
+            if (ratingError.message.includes('column "current_rating" does not exist')) {
+              console.warn(`⚠️ [AGGREGATE] current_rating column missing - creating it`);
+              try {
+                await pool.query(`
+                  ALTER TABLE users 
+                  ADD COLUMN IF NOT EXISTS current_rating INTEGER DEFAULT 1200,
+                  ADD COLUMN IF NOT EXISTS last_rating_update TIMESTAMP WITH TIME ZONE;
+                `);
+                // Retry the update
+                await pool.query(
+                  "UPDATE users SET current_rating = $1, last_rating_update = NOW() WHERE id = $2",
+                  [currentRating, userId]
+                );
+                console.log(`✅ [AGGREGATE] current_rating column created and updated`);
+              } catch (retryError) {
+                console.error(`❌ [AGGREGATE] Failed to create current_rating column:`, retryError.message);
+              }
+            } else {
+              console.error(`❌ [AGGREGATE] Error updating rating:`, ratingError.message);
+            }
+          }
         }
       }
     }
